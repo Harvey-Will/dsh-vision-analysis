@@ -73,7 +73,7 @@ export const Config: Schema<Config> = Schema.object({
   maxTokens: Schema.natural()
     .min(256)
     .max(65536)
-    .default(2048)
+    .default(4096)
     .description('Default maximum output tokens; a per-mode override wins when present.'),
   temperature: Schema.percent()
     .default(0.7)
