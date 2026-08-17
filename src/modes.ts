@@ -42,14 +42,14 @@ export interface ModeTuning {
  * reconstruction can be long.
  */
 export const MODE_TUNING_DEFAULTS: Readonly<Record<VisionMode, ModeTuning>> = {
-  describe: { maxTokens: 2048, temperature: 0.7 },
-  ocr: { maxTokens: 2048, temperature: 0.0 },
-  'ui-review': { maxTokens: 2048, temperature: 0.5 },
-  'chart-data': { maxTokens: 1536, temperature: 0.0 },
-  'object-detect': { maxTokens: 1536, temperature: 0.5 },
-  compare: { maxTokens: 2048, temperature: 0.5 },
+  describe: { maxTokens: 4096, temperature: 0.7 },
+  ocr: { maxTokens: 4096, temperature: 0.0 },
+  'ui-review': { maxTokens: 4096, temperature: 0.5 },
+  'chart-data': { maxTokens: 4096, temperature: 0.0 },
+  'object-detect': { maxTokens: 4096, temperature: 0.5 },
+  compare: { maxTokens: 4096, temperature: 0.5 },
   'code-gen': { maxTokens: 4096, temperature: 0.3 },
-  debug: { maxTokens: 2048, temperature: 0.7 },
+  debug: { maxTokens: 4096, temperature: 0.7 },
 }
 
 /** One-line human label per mode, used in the tool schema and call cards. */
