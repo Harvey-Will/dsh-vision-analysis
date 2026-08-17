@@ -115,6 +115,22 @@ dsh plugin --profile web add link:<绝对路径>/dsh-universal-vision-analysis
 - 尽量不把 API key 写进 `cordis.yml`：优先使用 `UNIVERSAL_VISION_API_KEY` 环境变量，或使用 `设置 -> 插件配置` 中的掩码密钥字段。
 - 工具审批不对端点做沙箱；只把工具指向你控制的端点。
 
+## 真实验证记录
+
+已针对真实 OpenAI 兼容端点（火山方舟，模型 `doubao-seed-2.0-lite`）做过端到端测试：
+
+1. 直接多模态调用（OpenAI 协议）返回 HTTP 200，正确转写了测试图文字并描述其内容。
+2. 将 bundle 真实装入 `headless` DSH profile（`dsh plugin --profile headless add <checkout>`），通过 profile 的 `cordis.patch.yml` 配置端点/模型，通过 `UNIVERSAL_VISION_API_KEY` 注入密钥。
+3. 真实 Agent 运行（`dsh --profile headless "Use the analyze_image tool to OCR …"`）：模型真实调用了 `analyze_image`（`mode: ocr`），插件读取本地 PNG、以 base64 发送到端点，会话日志记录了调用与返回文本：
+
+```
+step 1: analyze_image args={"image": "…/test-card.png", "mode": "ocr", "prompt": "…"}
+  -> result: DSH VISION TEST 1234
+              Line two: HELLO
+```
+
+这次真实运行还抓出并修复了一个单元测试未覆盖的 bug：`callVision` 最初直接读原始 `config.apiKey` 而非解析后的 key，导致 `UNIVERSAL_VISION_API_KEY` 回退从未进入 `Authorization` 头（HTTP 401）。修复后所有调用统一走 `resolveApiKey()`，并有专门测试覆盖。
+
 ## 开发
 
 ```sh

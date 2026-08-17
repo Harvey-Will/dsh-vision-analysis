@@ -5,7 +5,8 @@
  * @module dsh-universal-vision-analysis/vision-client
  */
 
-import type { Config } from './config.js'
+import type { Config, } from './config.js'
+import { resolveApiKey } from './config.js'
 import type { LoadedImage } from './media.js'
 import type { VisionMode } from './modes.js'
 
@@ -178,12 +179,13 @@ export async function callVision(
   fetchImpl: FetchLike = fetch,
 ): Promise<VisionResult> {
   const started = Date.now()
+  const apiKey = resolveApiKey(config)
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (config.apiFormat === 'anthropic') {
     headers['anthropic-version'] = '2023-06-01'
-    if (config.apiKey.trim() !== '') headers['x-api-key'] = config.apiKey.trim()
-  } else if (config.apiKey.trim() !== '') {
-    headers['authorization'] = `Bearer ${config.apiKey.trim()}`
+    if (apiKey !== undefined) headers['x-api-key'] = apiKey
+  } else if (apiKey !== undefined) {
+    headers['authorization'] = `Bearer ${apiKey}`
   }
   const timeoutSignal = AbortSignal.timeout(config.timeoutMs)
   const combined = AbortSignal.any([signal, timeoutSignal])
