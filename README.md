@@ -114,6 +114,22 @@ Configure through `cordis.yml` (the inserted row) or live in `Settings -> 插件
 - Keep the API key out of `cordis.yml` where possible: rely on the `UNIVERSAL_VISION_API_KEY` environment variable, or use the masked secret field in `Settings -> 插件配置`.
 - The endpoint is not sandboxed by tool approvals; only point it at endpoints you control.
 
+## Real-world verification
+
+Tested end-to-end against a real OpenAI-compatible endpoint (Volcengine Ark, model `doubao-seed-2.0-lite`):
+
+1. Direct multimodal call over the OpenAI protocol returned HTTP 200 and correctly transcribed the test image's text and described its contents.
+2. The bundle was mounted into a `headless` DSH profile (`dsh plugin --profile headless add <checkout>`) with the endpoint/model configured via the profile `cordis.patch.yml` and the key via `UNIVERSAL_VISION_API_KEY`.
+3. A real agent run (`dsh --profile headless "Use the analyze_image tool to OCR …"`) had the model call `analyze_image` with `mode: ocr`; the plugin loaded the local PNG, sent it base64-embedded to the endpoint, and the session log recorded the tool call and its text result:
+
+```
+step 1: analyze_image args={"image": "…/test-card.png", "mode": "ocr", "prompt": "…"}
+  -> result: DSH VISION TEST 1234
+              Line two: HELLO
+```
+
+This real run also caught and fixed a bug the unit tests missed: `callVision` initially read the raw `config.apiKey` instead of the resolved key, so the `UNIVERSAL_VISION_API_KEY` fallback never reached the `Authorization` header (HTTP 401). The fix routes all calls through `resolveApiKey()` and is covered by a dedicated test.
+
 ## Development
 
 ```sh
