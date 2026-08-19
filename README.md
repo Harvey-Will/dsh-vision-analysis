@@ -8,7 +8,8 @@ A model-facing `analyze_image` tool for the [DeepSeek Harness](https://github.co
 
 - **Eight analysis modes** with built-in instruction templates and output tuning: `describe`, `ocr`, `ui-review`, `chart-data`, `object-detect`, `compare`, `code-gen`, `debug`.
 - **Provider-agnostic**: any OpenAI `chat/completions` or Anthropic `messages` endpoint — MiMo, Step, SiliconFlow, OpenRouter, Gemini (OpenAI-compat), OpenAI, Claude, Ollama, LM Studio, vLLM, or a custom endpoint.
-- **Local paths and http(s) URLs**, up to **4 images per call** (multi-image comparison included).
+- **Local paths, http(s) URLs, and base64 data URLs**, up to **4 images per call** (multi-image comparison included).
+- **Web UI paste-image fallback**: paste an image into the composer of an image-incapable model and a `conversation.input.dock` banner offers "interpret with analyze_image and send" — the image is compressed to a data URL, the agent calls `analyze_image`, and the interpretation text enters the conversation. Models that accept images natively keep the untouched send path.
 - **No image leaks into the log**: only the vision model's text crosses into the conversation.
 - **Live configuration** through `Settings -> 插件配置` (Schemastery schema, secrets masked), overridable per mode (`maxTokens` / `temperature`).
 - **Resilient HTTP**: per-call API key resolution (inline config → `UNIVERSAL_VISION_API_KEY` env), caller-cancellation aware, timeout, bounded image reads, structured error messages, and a `debug` mode that returns a connectivity report instead of failing.
@@ -80,7 +81,7 @@ Configure through `cordis.yml` (the inserted row) or live in `Settings -> 插件
 
 | Name | Type | Description |
 |---|---|---|
-| `image` | string | Absolute local path or http(s) URL of the image. Required when `images` is omitted. |
+| `image` | string | Absolute local path, http(s) URL, or base64 data URL (`data:image/png;base64,…`) of the image. Required when `images` is omitted. |
 | `images` | string[] | Up to `maxImages` sources for a multi-image call; overrides `image`. |
 | `mode` | string | One of `describe`, `ocr`, `ui-review`, `chart-data`, `object-detect`, `compare`, `code-gen`, `debug`. |
 | `prompt` | string | Custom instruction; overrides the mode's default template. |

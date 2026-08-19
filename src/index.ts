@@ -64,8 +64,8 @@ const TOOL_HEAD =
   + 'Use when the user references an image file or URL, or when a task needs OCR, chart or '
   + 'diagram reading, screenshot or UI analysis, image comparison, translation of image text, '
   + 'photo understanding, or HTML/CSS recreation of a UI. '
-  + 'Each source is an absolute local path or an http(s) URL; for a multi-image comparison pass '
-  + 'the sources in `images`. '
+  + 'Each source is an absolute local path, an http(s) URL, or a base64 image data URL '
+  + '(`data:image/png;base64,…`); for a multi-image comparison pass the sources in `images`. '
   + 'Pick the `mode` that best matches the task (describe, ocr, ui-review, chart-data, '
   + 'object-detect, compare, code-gen, debug) and, for anything but a plain description, pass a '
   + 'precise `prompt` — e.g. "transcribe all text", "extract the table as CSV", '
@@ -101,13 +101,13 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
     parameters: {
       image: {
         type: 'string',
-        description: 'Absolute path to a local image file or an http(s) URL of the image. Required when `images` is omitted.',
+        description: 'Absolute path to a local image file, an http(s) URL of the image, or a base64 image data URL (data:image/png;base64,…). Required when `images` is omitted.',
       },
       images: {
         type: 'array',
         items: {
           type: 'string',
-          description: 'Absolute path or http(s) URL of one image in the batch.',
+          description: 'Absolute path, http(s) URL, or base64 image data URL of one image in the batch.',
         },
         description: 'Image sources for a multi-image call (at most the configured maxImages, default 2; compare mode uses 2+). Overrides `image` when present.',
       },
@@ -269,8 +269,10 @@ export type { ModeTuning } from './modes.js'
 export {
   IMAGE_EXTENSIONS,
   ImageSourceError,
+  isDataUrl,
   loadImage,
   mimeFromName,
+  parseDataUrl,
   sniffMime,
 } from './media.js'
 export type { ImageMimeType, LoadedImage } from './media.js'
