@@ -8,7 +8,8 @@
 
 - **8 种分析模式**，内置提示词模板与输出参数：`describe`（描述）、`ocr`（文字识别）、`ui-review`（UI 评审）、`chart-data`（图表取数）、`object-detect`（目标检测）、`compare`（对比）、`code-gen`（代码生成）、`debug`（连通性诊断）。
 - **提供商无关**：任意 OpenAI `chat/completions` 或 Anthropic `messages` 端点——MiMo、Step、硅基流动、OpenRouter、Gemini（OpenAI 兼容）、OpenAI、Claude、Ollama、LM Studio、vLLM 或自定义端点。
-- **本地路径与 http(s) URL**，每次调用最多 **4 张图**（含多图对比）。
+- **本地路径、http(s) URL 与 base64 data URL**，每次调用最多 **4 张图**（含多图对比）。
+- **Web UI 粘贴图片降级**：当会话模型不支持图片输入时，在输入框粘贴图片会显示"用 analyze_image 解读并发送"横幅——图片被压缩为 data URL，Agent 调用 `analyze_image` 后解读文本进入对话；支持图片的模型保持原生直发不受影响。
 - **图片不泄漏进日志**：只有视觉模型的文本跨入对话。
 - **配置实时生效**：通过 `设置 -> 插件配置` 编辑（Schemastery schema，密钥自动掩码），支持按模式覆盖 `maxTokens` / `temperature`。
 - **健壮的 HTTP**：每次调用解析 API key（内联配置 → `UNIVERSAL_VISION_API_KEY` 环境变量 → 本地模型免鉴权）、响应调用方取消、超时、图片读取有界、结构化错误信息；`debug` 模式返回连通性报告而非直接失败。
@@ -81,7 +82,7 @@ dsh plugin --profile web add link:<绝对路径>/dsh-universal-vision-analysis
 
 | 名称 | 类型 | 说明 |
 |---|---|---|
-| `image` | string | 本地绝对路径或 http(s) URL。未传 `images` 时必填。 |
+| `image` | string | 本地绝对路径、http(s) URL 或 base64 data URL（`data:image/png;base64,…`）。未传 `images` 时必填。 |
 | `images` | string[] | 多图调用时的图片源（最多 `maxImages` 张）；存在时覆盖 `image`。 |
 | `mode` | string | `describe` / `ocr` / `ui-review` / `chart-data` / `object-detect` / `compare` / `code-gen` / `debug`。 |
 | `prompt` | string | 自定义指令；覆盖模式默认模板。 |

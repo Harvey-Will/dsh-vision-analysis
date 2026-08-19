@@ -148,17 +148,70 @@ export class ImageSourceError extends Error {
   }
 }
 
+/** Whether a source string is a base64 data URL. */
+export function isDataUrl(source: string): boolean {
+  return /^data:image\/[^;,]+;base64,/i.test(source)
+}
+
+/** All MIME types this plugin recognizes, as a value set for validation. */
+const IMAGE_MIME_TYPES: readonly ImageMimeType[] = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+]
+
 /**
- * Resolve one image source to a MIME type (and bytes for local files). URL
- * sources are passed through by reference — the vision endpoint fetches them —
- * after basic URL and extension checks. Local paths are read with a byte cap
- * and embedded as base64.
- * @param source - an absolute local path or an http(s) URL.
- * @param maxBytes - per-image byte cap for local files.
+ * Parse a base64 image data URL (`data:image/png;base64,<data>`) into bytes
+ * and its declared MIME type, enforcing the byte cap.
+ * @param source - the data URL.
+ * @param maxBytes - per-image byte cap.
+ * @returns the decoded bytes and normalized MIME type.
+ */
+export function parseDataUrl(source: string, maxBytes: number): { bytes: Uint8Array; mimeType: ImageMimeType } {
+  const match = /^data:([^;,]+)(?:;[^,]*,|,)(.*)$/is.exec(source)
+  if (match === null || match[2] === undefined) {
+    throw new ImageSourceError('data URL must carry a media type and base64 payload (data:image/png;base64,<data>)')
+  }
+  const declared = match[1]!.split(';')[0]!.toLowerCase() as ImageMimeType
+  const base64 = match[2]!.trim()
+  let bytes: Buffer
+  try {
+    bytes = Buffer.from(base64, 'base64')
+  } catch {
+    throw new ImageSourceError('data URL payload is not valid base64')
+  }
+  if (bytes.byteLength > maxBytes) {
+    throw new ImageSourceError(`image exceeds the ${Math.round(maxBytes / MEGABYTE)} MB limit (${bytes.byteLength} bytes)`)
+  }
+  const mimeType = sniffMime(bytes) ?? declared
+  if (!(IMAGE_MIME_TYPES as readonly string[]).includes(mimeType)) {
+    throw new ImageSourceError(`unrecognized image format in data URL (expected PNG/JPEG/GIF/WebP/BMP): ${declared}`)
+  }
+  return { bytes: new Uint8Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.byteLength), mimeType }
+}
+
+/**
+ * Resolve one image source to a MIME type (and bytes for local files and data
+ * URLs). URL sources are passed through by reference — the vision endpoint
+ * fetches them — after basic URL and extension checks. Local paths are read
+ * with a byte cap and embedded as base64; data URLs are decoded in place.
+ * @param source - an absolute local path, an http(s) URL, or a `data:image/...;base64,` URL.
+ * @param maxBytes - per-image byte cap for local files and data URLs.
  * @param signal - cancellation forwarded to the URL fetch.
  * @returns the loaded image reference.
  */
 export async function loadImage(source: string, maxBytes: number, signal: AbortSignal): Promise<LoadedImage> {
+  if (isDataUrl(source)) {
+    const { bytes, mimeType } = parseDataUrl(source, maxBytes)
+    return {
+      source,
+      mimeType,
+      base64: Buffer.from(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.byteLength).toString('base64'),
+      bytes: bytes.byteLength,
+    }
+  }
   if (isHttpUrl(source)) {
     const byName = mimeFromName(source)
     if (byName === undefined) {
