@@ -246,17 +246,25 @@ export function apply(ctx: Context): void {
   // half composes against slots/locale/connection through the runtime shapes
   // it needs, not the full package-internal prop contracts of the owning
   // plugins (which are not importable across packages).
-  const registerLocale = ctx.locale.register as unknown as (
-    ns: string,
-    dicts: { zh: unknown; en: unknown },
-  ) => () => void
-  ctx.effect(() => registerLocale(NS, { zh: COPY.zh, en: COPY.en }), 'uva: dictionaries')
+  //
+  // CRITICAL: every service method is invoked as `ctx.<svc>.<method>(...)` —
+  // never destructured into a free function — because Cordis services bind
+  // instance state through `this` (LocaleRuntime keeps its dictionaries on
+  // `this.dicts`; slots keeps registrations on its instance). A destructured
+  // method reference drops the receiver and breaks `this.dicts` at boot.
+  ctx.effect(() => (
+    ctx.locale.register as unknown as (
+      ns: string,
+      dicts: { zh: unknown; en: unknown },
+    ) => () => void
+  )(NS, { zh: COPY.zh, en: COPY.en }), 'uva: dictionaries')
   const t = ctx.locale.bind(NS)
-  const injectSlot = ctx.slots.inject as unknown as (
-    name: string,
-    callback: () => unknown,
-  ) => void
-  const registerSlot = ctx.slots.register as unknown as (options: object, component: unknown) => () => void
+  const injectSlot = (name: string, callback: () => unknown): void => {
+    (ctx.slots.inject as unknown as (n: string, cb: () => unknown) => void)(name, callback)
+  }
+  const registerSlot = (options: object, component: unknown): (() => void) => (
+    ctx.slots.register as unknown as (o: object, c: unknown) => () => void
+  )(options, component)
   injectSlot('conversation.input.dock', () => registerSlot({
     name: 'conversation.input.dock',
     id: 'uva-vision-interpret',
