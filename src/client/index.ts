@@ -236,6 +236,11 @@ function VisionInterpretDock({
  * Client plugin body: registers the composer dock entry.
  * @param ctx - client cordis context.
  */
+// Hard dependencies: the slot/locale/connection services gate `apply` until
+// they are ready, and the Guard rejects their Context access without this
+// declaration (the browser-half analogue of the node half's `inject`).
+export const inject = ['slots', 'locale', 'connection', 'conversation']
+
 export function apply(ctx: Context): void {
   // Pragmatic loose typing at the cordis boundary: this third-party browser
   // half composes against slots/locale/connection through the runtime shapes
