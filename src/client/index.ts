@@ -246,8 +246,11 @@ export function apply(ctx: Context): void {
   // half composes against slots/locale/connection through the runtime shapes
   // it needs, not the full package-internal prop contracts of the owning
   // plugins (which are not importable across packages).
-  const registerLocale = ctx.locale.register as unknown as (ns: string, zh: unknown, en: unknown) => () => void
-  ctx.effect(() => registerLocale(NS, COPY.zh, COPY.en), 'uva: dictionaries')
+  const registerLocale = ctx.locale.register as unknown as (
+    ns: string,
+    dicts: { zh: unknown; en: unknown },
+  ) => () => void
+  ctx.effect(() => registerLocale(NS, { zh: COPY.zh, en: COPY.en }), 'uva: dictionaries')
   const t = ctx.locale.bind(NS)
   const injectSlot = ctx.slots.inject as unknown as (
     name: string,
