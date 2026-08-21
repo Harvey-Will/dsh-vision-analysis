@@ -1,6 +1,6 @@
 {
   "name": "dsh-vision-analysis",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.8",
   "description": "Model-facing analyze_image tool for the DeepSeek Harness: multi-modal image understanding via any OpenAI- or Anthropic-compatible vision API, with 8 analysis modes, local path / http(s) URL / data URL input, and a Web UI hint that guides image-incapable models to the reliable local-path route.",
   "type": "module",
   "main": "lib/index.js",
