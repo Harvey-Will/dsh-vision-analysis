@@ -178,7 +178,11 @@ function VisionInterpretDock({
     }
   }, [sessionId, api])
 
-  const showFallback = imageIds.length > 0 && modelImageCapable === false && !busy
+  // Show the fallback unless the model is CONFIRMED image-capable. An unknown
+  // capability (query failed, model not resolved) must still offer the
+  // interpretation path — otherwise the user only has the native send, which
+  // the host rejects for a text-only model.
+  const showFallback = imageIds.length > 0 && modelImageCapable !== true && !busy
 
   const onInterpret = async (): Promise<void> => {
     if (inputActions === undefined || conversation === undefined || t === undefined) return
