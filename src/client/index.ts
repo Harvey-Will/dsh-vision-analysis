@@ -1,23 +1,22 @@
 /**
  * Browser half of dsh-universal-vision-analysis: a `conversation.input.dock`
- * entry that gives the Web UI a paste-image fallback for models that cannot
- * take image input.
+ * entry that guides the Web UI when the active model cannot take image input.
  *
  * Flow: when the composer holds draft images and the session's current model
- * is NOT in the built-in image-capable list, the entry renders a banner with
- * an "interpret and send" action. The action compresses each draft image on a
- * canvas, appends an `analyze_image` instruction carrying the image as base64
- * data URLs to the draft, removes the draft images, and submits — so the agent
- * calls the plugin's host-side tool and the interpretation text enters the
- * conversation instead of the model being asked for image input it cannot
- * accept. When the model is image-capable, the entry renders nothing and the
+ * is NOT confirmed image-capable, the entry renders a hint asking the user to
+ * save the image to a local file and send its absolute path, so the host-side
+ * `analyze_image` tool parses it directly. Base64 data URLs were tried first
+ * (compress → embed in a text prompt → agent calls analyze_image), but the
+ * multi-hundred-KB payloads were corrupted in the message→tool→vision-API
+ * pipeline, so the banner now only guides toward the reliable local-path
+ * route. When the model is image-capable, the entry renders nothing and the
  * native image send path is untouched.
  *
- * Deliberately dependency-light: the entry reads input state and actions
- * through the standard composer provide channel (`useInput` + `inputActions`),
- * resolves the current model through the shared API client, and collaborates
- * with the host half only through the `analyze_image` tool itself — no custom
- * client→host RPC is registered.
+ * Deliberately dependency-light: the entry reads input state through the
+ * standard composer provide channel (`useInput`), resolves the current model
+ * through the shared API client, and collaborates with the host half only
+ * through the `analyze_image` tool itself — no custom client→host RPC is
+ * registered.
  * @module dsh-universal-vision-analysis/client
  */
 
@@ -45,18 +44,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Product copy (Chinese, matching the DSH web UI language). */
 const COPY = {
   zh: {
-    'interpret.banner': '当前模型不支持图片，粘贴的图片将由 analyze_image 解读后发送',
-    'interpret.action': '用 analyze_image 解读并发送',
-    'interpret.busy': '正在解读图片…',
-    'interpret.error': '图片解读失败：{message}',
-    'interpret.instruction': '请调用 analyze_image 工具，用 mode=describe 解析下面这张图片，并告诉我图片里有什么：',
+    'interpret.banner': '当前模型不支持图片输入。请将图片保存到本地磁盘，然后发送其绝对路径（如 /path/to/image.png），我会调用 analyze_image 工具解析。',
+    'interpret.hint': '或切换到支持图片的模型（如 doubao-seed-2.0-lite）后直接粘贴发送。',
   },
   en: {
-    'interpret.banner': 'The current model cannot take images; pasted images will be interpreted by analyze_image',
-    'interpret.action': 'Interpret with analyze_image and send',
-    'interpret.busy': 'Interpreting image…',
-    'interpret.error': 'Image interpretation failed: {message}',
-    'interpret.instruction': 'Use the analyze_image tool with mode=describe to analyze this image and tell me what it shows:',
+    'interpret.banner': 'The current model cannot take images. Save the image to a local file and send its absolute path (e.g. /path/to/image.png); the analyze_image tool will parse it.',
+    'interpret.hint': 'Or switch to an image-capable model (e.g. doubao-seed-2.0-lite) and paste directly.',
   },
 }
 
@@ -97,51 +90,11 @@ function modelSupportsImage(modelId: string): boolean {
   return IMAGE_CAPABLE_MODEL_HINTS.some((hint) => id.includes(hint))
 }
 
-/**
- * Compress one image file to a base64 data URL. GIFs and PNGs keep their
- * format; everything else is re-encoded as JPEG so the payload stays small
- * enough to travel inside a text prompt.
- * @param file - the browser image file.
- * @returns a `data:image/...;base64,` URL.
- */
-async function fileToDataUrl(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file)
-  try {
-    const MAX_DIM = 1280
-    const scale = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-    const ctx = canvas.getContext('2d')
-    if (ctx === null) throw new Error('canvas 2d context unavailable')
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    if (file.type === 'image/png' || file.type === 'image/gif') {
-      return canvas.toDataURL('image/png')
-    }
-    return canvas.toDataURL('image/jpeg', 0.85)
-  } finally {
-    bitmap.close()
-  }
-}
-
 /** Minimal structural contracts; the runtime injects the real objects. */
-interface DraftAttachment {
-  readonly id: string
-  readonly file: File
-}
-
 interface VisionDockProps {
   sessionId?: string
   /** Composer input state, provided to every session-scope entry. */
   useInput?: (selector: (state: unknown) => unknown) => unknown
-  /** Composer actions, provided to every session-scope entry. */
-  inputActions?: {
-    setDraft(text: string): void
-    removeImage(id: string): void
-    submit(): void
-  }
-  /** Injectable: the shared conversation controller (draft images). */
-  conversation?: { draftImages(ids: readonly string[]): readonly DraftAttachment[] }
   /** Injectable: the shared API client (current model resolution). */
   api?: {
     sessions: {
@@ -152,16 +105,13 @@ interface VisionDockProps {
   t?: (key: string, params?: Record<string, string>) => string
 }
 
-/** The composer dock entry that offers the interpretation fallback. */
+/** The composer dock entry that guides image-capability fallback. */
 function VisionInterpretDock({
-  sessionId, useInput, inputActions, conversation, api, t,
+  sessionId, useInput, api, t,
 }: VisionDockProps): React.ReactElement | null {
   const inputState = useInput === undefined ? undefined : useInput((state) => state)
   const imageIds: string[] = (inputState as { imageIds?: string[] } | undefined)?.imageIds ?? []
-  const draft: string = (inputState as { draft?: string } | undefined)?.draft ?? ''
   const [modelImageCapable, setModelImageCapable] = useState<boolean | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (sessionId === undefined || api === undefined) return
@@ -178,41 +128,22 @@ function VisionInterpretDock({
     }
   }, [sessionId, api])
 
-  // Show the fallback unless the model is CONFIRMED image-capable. An unknown
-  // capability (query failed, model not resolved) must still offer the
-  // interpretation path — otherwise the user only has the native send, which
-  // the host rejects for a text-only model.
-  const showFallback = imageIds.length > 0 && modelImageCapable !== true && !busy
+  // Show the hint unless the model is CONFIRMED image-capable. An unknown
+  // capability (query failed, model not resolved) must still show it —
+  // otherwise the user only has the native send, which the host rejects for a
+  // text-only model.
+  const showHint = imageIds.length > 0 && modelImageCapable !== true
 
-  const onInterpret = async (): Promise<void> => {
-    if (inputActions === undefined || conversation === undefined || t === undefined) return
-    setBusy(true)
-    setError(null)
-    try {
-      const attachments = conversation.draftImages(imageIds)
-      const dataUrls = await Promise.all(attachments.map((attachment) => fileToDataUrl(attachment.file)))
-      const instruction = `${t('interpret.instruction')}\n\n${dataUrls.join('\n\n')}`
-      inputActions.setDraft(draft === '' ? instruction : `${draft}\n\n${instruction}`)
-      for (const id of imageIds) inputActions.removeImage(id)
-      inputActions.submit()
-    } catch (error) {
-      setError(t('interpret.error', { message: error instanceof Error ? error.message : String(error) }))
-    } finally {
-      setBusy(false)
-    }
-  }
+  if (!showHint) return null
 
-  if (!showFallback && error === null) return null
-
-  const bannerText = busy ? t?.('interpret.busy') : error ?? t?.('interpret.banner')
   return React.createElement(
     'div',
     {
       role: 'status',
       style: {
         display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        flexDirection: 'column',
+        gap: 2,
         padding: '6px 10px',
         margin: '6px 10px 0',
         borderRadius: 8,
@@ -221,26 +152,8 @@ function VisionInterpretDock({
         fontSize: 12,
       },
     },
-    React.createElement('span', { style: { flex: 1 } }, bannerText),
-    showFallback
-      ? React.createElement(
-        'button',
-        {
-          type: 'button',
-          onClick: () => { void onInterpret() },
-          style: {
-            border: 'none',
-            borderRadius: 6,
-            padding: '4px 10px',
-            cursor: 'pointer',
-            background: 'var(--dsw-accent, #3b82f6)',
-            color: '#fff',
-            fontSize: 12,
-          },
-        },
-        t?.('interpret.action'),
-      )
-      : null,
+    React.createElement('span', null, t?.('interpret.banner')),
+    React.createElement('span', null, t?.('interpret.hint')),
   )
 }
 
@@ -251,7 +164,7 @@ function VisionInterpretDock({
 // Hard dependencies: the slot/locale/connection services gate `apply` until
 // they are ready, and the Guard rejects their Context access without this
 // declaration (the browser-half analogue of the node half's `inject`).
-export const inject = ['slots', 'locale', 'connection', 'conversation']
+export const inject = ['slots', 'locale', 'connection']
 
 export function apply(ctx: Context): void {
   // Pragmatic loose typing at the cordis boundary: this third-party browser
@@ -283,12 +196,11 @@ export function apply(ctx: Context): void {
     order: 500,
     locale: NS,
     inject: () => ({
-      conversation: ctx.get('conversation'),
       api: (ctx.get('connection') as { api?: unknown } | undefined)?.api,
       t,
     }),
   }, VisionInterpretDock))
 }
 
-export { modelSupportsImage, fileToDataUrl }
-export type { DraftAttachment, VisionDockProps }
+export { modelSupportsImage }
+export type { VisionDockProps }
