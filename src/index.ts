@@ -204,15 +204,16 @@ async function runDebug(
   signal: AbortSignal,
 ): Promise<AnalyzeImageOutput> {
   const apiKey = resolveApiKey(active)
-  const maskKey = (key: string | undefined): string =>
-    key === undefined ? '(none)' : `${key.slice(0, 4)}****`
+  // Never expose any part of the key, not even a prefix: the report only
+  // states whether a credential is configured.
+  const keyStatus = apiKey === undefined ? 'not configured (local model)' : 'configured (masked)'
   const header = [
     '## Vision Endpoint Diagnostic',
     '',
     `- Provider format: ${active.apiFormat}`,
     `- Endpoint: ${maskEndpoint(endpoint)}`,
     `- Model: ${active.model}`,
-    `- API key: ${maskKey(apiKey)}`,
+    `- API key: ${keyStatus}`,
     `- Mode: ${mode}`,
     `- Images: ${images.length}`,
   ].join('\n')
