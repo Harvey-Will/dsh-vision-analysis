@@ -64,8 +64,17 @@ const COPY = {
  * Model ids that natively accept image input. Prefix matching, lowercase.
  * A model on this list sends pasted images through the native path; any other
  * model falls back to the analyze_image interpretation path.
+ *
+ * DeepSeek Harness rc.8 lets a deployment enable native image requests per
+ * model via `inputModalities` in `llm-deepseek.models` (settings.yaml); the
+ * models this deployment has enabled belong on this list so the fallback
+ * banner steps aside. Unknown models keep the fallback banner.
  */
 const IMAGE_CAPABLE_MODEL_HINTS = [
+  'deepseek-v4',
+  'deepseek-v3',
+  'glm-5',
+  'glm-4',
   'doubao-seed-2.0',
   'gpt-4o',
   'gpt-4.1',
@@ -77,7 +86,6 @@ const IMAGE_CAPABLE_MODEL_HINTS = [
   'qwen-vl',
   'qwen2.5-vl',
   'qwen3-vl',
-  'glm-4v',
   'llava',
   'internvl',
   'minicpm-v',
