@@ -1,7 +1,7 @@
 {
   "name": "dsh-vision-analysis",
   "version": "0.1.0",
-  "description": "Model-facing analyze_image tool for the DeepSeek Harness: multi-modal image understanding via any OpenAI- or Anthropic-compatible vision API, with 8 analysis modes, local path / http(s) URL / data URL input, and a Web UI paste-image fallback that interprets images with the plugin when the active model cannot take images.",
+  "description": "Model-facing analyze_image tool for the DeepSeek Harness: multi-modal image understanding via any OpenAI- or Anthropic-compatible vision API, with 8 analysis modes, local path / http(s) URL / data URL input, and a Web UI hint that guides image-incapable models to the reliable local-path route.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -90,5 +90,10 @@
   "license": "MIT",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/<your-org>/dsh-vision-analysis.git"
+  },
+  "homepage": "https://github.com/<your-org>/dsh-vision-analysis#readme"
 }
