@@ -1,5 +1,5 @@
 {
-  "name": "dsh-universal-vision-analysis",
+  "name": "dsh-vision-analysis",
   "version": "0.1.0",
   "description": "Model-facing analyze_image tool for the DeepSeek Harness: multi-modal image understanding via any OpenAI- or Anthropic-compatible vision API, with 8 analysis modes, local path / http(s) URL / data URL input, and a Web UI paste-image fallback that interprets images with the plugin when the active model cannot take images.",
   "type": "module",

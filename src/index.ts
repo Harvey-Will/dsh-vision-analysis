@@ -7,7 +7,7 @@
  * the conversation. Eight analysis modes provide default instructions and
  * output tuning; a caller-supplied `prompt` overrides the mode template. The
  * plugin configuration is editable live from Settings -> 插件配置.
- * @module dsh-universal-vision-analysis
+ * @module dsh-vision-analysis
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -21,13 +21,13 @@ import type { VisionMode } from './modes.js'
 import { callVision } from './vision-client.js'
 
 /** The plugin's Cordis identity. */
-export const name = 'universal-vision-analysis'
+export const name = 'vision-analysis'
 
 /** Hard dependency on the tool registry; `apply` runs only once it is ready. */
 export const inject = ['tools']
 
 /** The settings namespace under which the plugin's configuration is edited. */
-export const SETTINGS_NAMESPACE = 'universal-vision-analysis'
+export const SETTINGS_NAMESPACE = 'vision-analysis'
 
 /** The registered tool's canonical call arguments. */
 export interface AnalyzeImageArgs {

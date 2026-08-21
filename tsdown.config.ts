@@ -1,12 +1,12 @@
 /**
- * Browser client bundle for dsh-universal-vision-analysis.
+ * Browser client bundle for dsh-vision-analysis.
  *
  * Emits `lib/client.js` in the DeepSeek Harness module-loader format: a
  * closure factory handed to `window.__ModuleLoader__.load({ id, factory })`
  * with the shared platform modules left external (the loader's module table
  * provides them). Everything else the client half imports is inlined into the
  * single artifact.
- * @module dsh-universal-vision-analysis/tsdown
+ * @module dsh-vision-analysis/tsdown
  */
 
 import { defineConfig } from 'tsdown'
@@ -26,7 +26,7 @@ const PLATFORM_MODULES = [
 ]
 
 export default defineConfig({
-  name: 'dsh-universal-vision-analysis/client',
+  name: 'dsh-vision-analysis/client',
   // Pack the tsc-emitted client half (JS at lib/client/index.js; the
   // declaration lives at lib/types/client). `clean: false` keeps the node
   // half intact.
@@ -49,7 +49,7 @@ export default defineConfig({
   },
   outputOptions: {
     entryFileNames: 'client.js',
-    banner: 'window.__ModuleLoader__.load({ id: "dsh-universal-vision-analysis", factory: (require) => {',
+    banner: 'window.__ModuleLoader__.load({ id: "dsh-vision-analysis", factory: (require) => {',
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },
