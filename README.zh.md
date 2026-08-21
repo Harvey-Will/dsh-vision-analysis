@@ -1,4 +1,4 @@
-# dsh-universal-vision-analysis
+# dsh-vision-analysis
 
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的模型面对工具 `analyze_image`：让纯文本 Agent 获得图像理解能力——通过任意 **OpenAI 或 Anthropic 兼容的视觉端点**分析一张或多张图片，并且只把视觉模型的文本答案带回对话，**图片字节永远不会进入会话**。
 
@@ -21,18 +21,18 @@
 
 ```sh
 # 从 npm（发布后）
-dsh plugin --profile web add dsh-universal-vision-analysis
+dsh plugin --profile web add dsh-vision-analysis
 
 # 从 GitHub（作者需提供 prepare 构建脚本——本仓库已提供）
-dsh plugin --profile web add github:<you>/dsh-universal-vision-analysis
+dsh plugin --profile web add github:<you>/dsh-vision-analysis
 # pnpm ≥10 默认阻止 git 依赖的 prepare 脚本，需先在 profile 的
 # pnpm-workspace.yaml 中放行（按 pnpm 打印的 key 填写）：
 #   allowBuilds:
-#     dsh-universal-vision-analysis: true
+#     dsh-vision-analysis: true
 # 然后重新 add。
 
 # 本地 checkout
-dsh plugin --profile web add link:<绝对路径>/dsh-universal-vision-analysis
+dsh plugin --profile web add link:<绝对路径>/dsh-vision-analysis
 ```
 
 重启 web profile（`dsh web`）后新建会话，例如问 *“把 /path/to/screenshot.png 里的文字全部转写出来”*——Agent 会自动调用 `analyze_image`。
@@ -42,8 +42,8 @@ dsh plugin --profile web add link:<绝对路径>/dsh-universal-vision-analysis
 通过 `cordis.yml`（插入的行）或 `设置 -> 插件配置` 实时配置。
 
 ```yaml
-- id: universal-vision-analysis
-  name: dsh-universal-vision-analysis
+- id: vision-analysis
+  name: dsh-vision-analysis
   config:
     apiFormat: openai          # openai | anthropic
     baseURL: https://api.siliconflow.cn/v1

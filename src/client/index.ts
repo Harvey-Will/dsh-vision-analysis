@@ -1,5 +1,5 @@
 /**
- * Browser half of dsh-universal-vision-analysis: a `conversation.input.dock`
+ * Browser half of dsh-vision-analysis: a `conversation.input.dock`
  * entry that guides the Web UI when the active model cannot take image input.
  *
  * Flow: when the composer holds draft images and the session's current model
@@ -17,7 +17,7 @@
  * through the shared API client, and collaborates with the host half only
  * through the `analyze_image` tool itself — no custom client→host RPC is
  * registered.
- * @module dsh-universal-vision-analysis/client
+ * @module dsh-vision-analysis/client
  */
 
 import React, { useEffect, useState } from 'react'
@@ -32,12 +32,12 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** Locale namespace for this browser half. */
-const NS = 'universal-vision-analysis'
+const NS = 'vision-analysis'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Composer paste-image interpretation fallback copy. */
-    'universal-vision-analysis': (typeof COPY)['zh']
+    'vision-analysis': (typeof COPY)['zh']
   }
 }
 

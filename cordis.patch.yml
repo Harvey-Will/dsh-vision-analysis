@@ -1,14 +1,14 @@
-# dsh-universal-vision-analysis bundle patch.
+# dsh-vision-analysis bundle patch.
 #
 # Applied as a profile bundle layer (the `dsh.bundle.patch` manifest field).
 # Install with:
 #
-#   dsh plugin --profile web add dsh-universal-vision-analysis
+#   dsh plugin --profile web add dsh-vision-analysis
 #   # or from a local checkout:
-#   dsh plugin --profile web add link:<abs-path>/dsh-universal-vision-analysis
+#   dsh plugin --profile web add link:<abs-path>/dsh-vision-analysis
 #
 # The inserted row registers the model-facing `analyze_image` tool and the
 # "Universal Vision Analysis" settings section (Settings -> 插件配置).
 - insert:
-    - id: universal-vision-analysis
-      name: dsh-universal-vision-analysis
+    - id: vision-analysis
+      name: dsh-vision-analysis

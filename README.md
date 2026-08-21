@@ -1,4 +1,4 @@
-# dsh-universal-vision-analysis
+# dsh-vision-analysis
 
 A model-facing `analyze_image` tool for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It gives a text-only agent image understanding by asking any **OpenAI- or Anthropic-compatible vision endpoint** to analyze one or more images, and returns only the vision model's text answer — the image bytes never enter the conversation.
 
@@ -21,17 +21,17 @@ Requires DSH `0.1.0-rc.x` and Node `^22.19 || >=24`.
 
 ```sh
 # From npm (once published)
-dsh plugin --profile web add dsh-universal-vision-analysis
+dsh plugin --profile web add dsh-vision-analysis
 
 # From GitHub (author must ship a `prepare` build script — this repo does)
-dsh plugin --profile web add github:<you>/dsh-universal-vision-analysis
+dsh plugin --profile web add github:<you>/dsh-vision-analysis
 # pnpm ≥10 blocks git `prepare` scripts until allowed; add the printed key:
 #   allowBuilds:
-#     dsh-universal-vision-analysis: true
+#     dsh-vision-analysis: true
 # in the profile's pnpm-workspace.yaml, then re-run the add.
 
 # From a local checkout
-dsh plugin --profile web add link:<abs-path>/dsh-universal-vision-analysis
+dsh plugin --profile web add link:<abs-path>/dsh-vision-analysis
 ```
 
 Then restart the web profile (`dsh web`), open a session, and ask e.g. *"transcribe all text in /path/to/screenshot.png"* — the agent calls `analyze_image` automatically.
@@ -41,8 +41,8 @@ Then restart the web profile (`dsh web`), open a session, and ask e.g. *"transcr
 Configure through `cordis.yml` (the inserted row) or live in `Settings -> 插件配置`.
 
 ```yaml
-- id: universal-vision-analysis
-  name: dsh-universal-vision-analysis
+- id: vision-analysis
+  name: dsh-vision-analysis
   config:
     apiFormat: openai          # openai | anthropic
     baseURL: https://api.siliconflow.cn/v1
