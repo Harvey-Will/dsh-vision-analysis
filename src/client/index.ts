@@ -67,6 +67,9 @@ const COPY = {
  * verified multimodal route (doubao-seed-2.0) is enabled.
  */
 const IMAGE_CAPABLE_MODEL_HINTS = [
+  // Official DeepSeek multimodal model (0.1.1-rc.1+): enables native image input
+  // on the DeepSeek adapter when listed with `inputModalities: ['text','image']`.
+  'deepseek-v4-flash-vision-exp',
   'doubao-seed-2.0',
   'gpt-4o',
   'gpt-4.1',
