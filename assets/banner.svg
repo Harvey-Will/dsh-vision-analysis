@@ -1,0 +1,136 @@
+<svg width="1280" height="400" viewBox="0 0 1280 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DSH Vision Analysis — image understanding for the DeepSeek Harness">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f2f7ff"/>
+    </linearGradient>
+    <linearGradient id="whale" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6d8bff"/>
+      <stop offset="1" stop-color="#4d6bfe"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4d6bfe"/>
+      <stop offset="1" stop-color="#8fb0ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1280" height="400" fill="url(#bg)"/>
+
+  <!-- soft bubbles -->
+  <g stroke="#c9dcff" fill="none" opacity="0.75">
+    <circle cx="150" cy="86" r="11" stroke-width="2.5"/>
+    <circle cx="96" cy="298" r="15" stroke-width="2.5"/>
+    <circle cx="1186" cy="76" r="13" stroke-width="2.5"/>
+    <circle cx="1224" cy="316" r="9" stroke-width="2.5"/>
+  </g>
+  <g fill="#dce9ff" opacity="0.8">
+    <circle cx="205" cy="52" r="5"/>
+    <circle cx="1130" cy="150" r="6"/>
+    <circle cx="60" cy="180" r="4.5"/>
+  </g>
+
+  <!-- bottom waves -->
+  <path d="M 0 372 C 170 350, 330 392, 500 374 C 670 356, 830 394, 990 376 C 1110 363, 1210 380, 1280 372 L 1280 400 L 0 400 Z"
+        fill="#e3edff"/>
+  <path d="M 0 386 C 200 370, 400 398, 620 384 C 840 370, 1060 396, 1280 382 L 1280 400 L 0 400 Z"
+        fill="#d3e3ff"/>
+
+  <!-- top accent line -->
+  <rect width="1280" height="3" rx="1.5" fill="url(#accent)" opacity="0.9"/>
+
+  <!-- ===== whale (DeepSeek mascot, cute style) ===== -->
+  <g>
+    <!-- spout -->
+    <path d="M 640 44 C 635 32, 644 24, 640 10" stroke="#8fb0ff" stroke-width="3.5"
+          stroke-linecap="round" fill="none"/>
+    <path d="M 624 32 C 618 26, 616 18, 619 10" stroke="#a9c4ff" stroke-width="2.6"
+          stroke-linecap="round" fill="none"/>
+    <path d="M 656 32 C 662 26, 664 18, 661 10" stroke="#a9c4ff" stroke-width="2.6"
+          stroke-linecap="round" fill="none"/>
+    <circle cx="626" cy="14" r="4" fill="#a9c4ff"/>
+    <circle cx="654" cy="12" r="4.6" fill="#a9c4ff"/>
+    <circle cx="640" cy="4" r="3.2" fill="#bcd0ff"/>
+
+    <!-- tail -->
+    <path d="M 716 84 C 752 68, 772 50, 780 30 C 787 53, 787 76, 769 92 C 785 98, 791 112, 787 126
+             C 762 118, 738 106, 716 100 Z" fill="url(#whale)"/>
+
+    <!-- body -->
+    <ellipse cx="635" cy="95" rx="93" ry="51" fill="url(#whale)"/>
+
+    <!-- belly -->
+    <path d="M 556 104 C 570 130, 702 134, 722 100 C 716 124, 688 138, 638 138
+             C 596 138, 566 124, 556 104 Z" fill="#eaf1ff"/>
+
+    <!-- side fin -->
+    <ellipse cx="602" cy="122" rx="19" ry="10.5" fill="#5f7dff"
+             transform="rotate(-14 602 122)"/>
+
+    <!-- big cute eyes -->
+    <circle cx="600" cy="78" r="12.5" fill="#ffffff"/>
+    <circle cx="634" cy="78" r="12.5" fill="#ffffff"/>
+    <circle cx="601" cy="79" r="6.6" fill="#1c2f6e"/>
+    <circle cx="635" cy="79" r="6.6" fill="#1c2f6e"/>
+    <circle cx="598.5" cy="75.5" r="2.3" fill="#ffffff"/>
+    <circle cx="632.5" cy="75.5" r="2.3" fill="#ffffff"/>
+
+    <!-- blush + smile -->
+    <ellipse cx="580" cy="97" rx="8.5" ry="5" fill="#ffb3c1" opacity="0.55"/>
+    <ellipse cx="654" cy="97" rx="8.5" ry="5" fill="#ffb3c1" opacity="0.55"/>
+    <path d="M 607 100 Q 617 108 627 100" stroke="#1c2f6e" stroke-width="2.6"
+          stroke-linecap="round" fill="none"/>
+  </g>
+
+  <!-- title -->
+  <text x="640" y="212" text-anchor="middle"
+        font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="54" font-weight="700" fill="#4d6bfe" letter-spacing="0.5">DSH Vision Analysis</text>
+
+  <!-- subtitle -->
+  <text x="640" y="248" text-anchor="middle"
+        font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="20" fill="#64748b">Image understanding for the DeepSeek Harness</text>
+
+  <!-- mode chips -->
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+     font-size="14" fill="#33518f" text-anchor="middle">
+    <g>
+      <rect x="154" y="268" width="118" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="213" y="290">describe</text>
+    </g>
+    <g>
+      <rect x="286" y="268" width="72" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="322" y="290">ocr</text>
+    </g>
+    <g>
+      <rect x="372" y="268" width="116" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="430" y="290">ui-review</text>
+    </g>
+    <g>
+      <rect x="502" y="268" width="124" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="564" y="290">chart-data</text>
+    </g>
+    <g>
+      <rect x="640" y="268" width="142" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="711" y="290">object-detect</text>
+    </g>
+    <g>
+      <rect x="796" y="268" width="104" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="848" y="290">compare</text>
+    </g>
+    <g>
+      <rect x="914" y="268" width="110" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="969" y="290">code-gen</text>
+    </g>
+    <g>
+      <rect x="1038" y="268" width="84" height="34" rx="17" fill="#4d6bfe" fill-opacity="0.08" stroke="#4d6bfe" stroke-opacity="0.35"/>
+      <text x="1080" y="290">debug</text>
+    </g>
+  </g>
+
+  <!-- footer line -->
+  <text x="640" y="346" text-anchor="middle"
+        font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="15" fill="#8aa0c4">Any OpenAI / Anthropic-compatible endpoint&#160;&#160;·&#160;&#160;local path&#160;&#160;·&#160;&#160;URL&#160;&#160;·&#160;&#160;data URL&#160;&#160;·&#160;&#160;privacy-first</text>
+</svg>
