@@ -18,7 +18,7 @@ import type { ApiFormat } from './config.js'
 import { ImageSourceError, loadImage } from './media.js'
 import { composePrompt, resolveTuning, VISION_MODES } from './modes.js'
 import type { VisionMode } from './modes.js'
-import { callVision } from './vision-client.js'
+import { callVision, VisionCache } from './vision-client.js'
 
 /** The plugin's Cordis identity. */
 export const name = 'vision-analysis'
@@ -85,6 +85,10 @@ function maskEndpoint(endpoint: string): string {
  */
 export function apply(ctx: Context, config: Config = {} as Config): void {
   let current: () => Config = () => config
+  // Short-lived result cache. Rebuilt lazily per call so config edits to the
+  // TTL / entry cap take effect immediately (a parameter change drops old
+  // entries, which is the desired invalidation behavior).
+  let cache: VisionCache | undefined
   installSettingsSection(ctx, settingsNamespace(SETTINGS_NAMESPACE), Config, config, {
     setSource: (source) => {
       current = source
@@ -159,10 +163,37 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
       )
       const prompt = composePrompt(mode, images.length, args.prompt)
 
-      if (mode === 'debug') {
-        return runDebug(active, endpoint, mode, images, prompt, tuning, exec.signal)
+      // Caching is skipped for `debug` (it must always hit the network) and
+      // when the TTL is 0. On a hit the prior successful answer is returned
+      // without issuing a second request.
+      const useCache = mode !== 'debug' && active.cacheTtlMs > 0
+      if (useCache) {
+        if (cache === undefined || cache.ttlMs !== active.cacheTtlMs || cache.maxEntries !== active.cacheMaxEntries) {
+          cache = new VisionCache(active.cacheTtlMs, active.cacheMaxEntries)
+        }
+        const hit = cache.get(endpoint, prompt, images)
+        if (hit !== undefined) {
+          return {
+            text: hit.truncated
+              ? `${hit.text}\n\n[output truncated at the token limit]`
+              : hit.text,
+            mode,
+            model: active.model,
+            imageCount: images.length,
+            httpStatus: hit.httpStatus,
+            latencyMs: hit.latencyMs,
+            truncated: hit.truncated,
+          }
+        }
       }
-      const result = await callVision(active, endpoint, prompt, images, tuning, exec.signal)
+
+      if (mode === 'debug') {
+        return runDebug(active, endpoint, mode, images, prompt, tuning, exec.signal, active.retryCount, active.retryBackoffMs)
+      }
+      const result = await callVision(active, endpoint, prompt, images, tuning, exec.signal, active.retryCount, active.retryBackoffMs)
+      if (useCache) {
+        cache!.set(endpoint, prompt, images, result)
+      }
       const text = result.truncated
         ? `${result.text}\n\n[output truncated at the token limit]`
         : result.text
@@ -202,6 +233,8 @@ async function runDebug(
   prompt: string,
   tuning: { maxTokens: number; temperature: number },
   signal: AbortSignal,
+  retryCount = 0,
+  retryBackoffMs = 2000,
 ): Promise<AnalyzeImageOutput> {
   const apiKey = resolveApiKey(active)
   // Never expose any part of the key, not even a prefix: the report only
@@ -218,7 +251,7 @@ async function runDebug(
     `- Images: ${images.length}`,
   ].join('\n')
   try {
-    const result = await callVision(active, endpoint, prompt, images, tuning, signal)
+    const result = await callVision(active, endpoint, prompt, images, tuning, signal, retryCount, retryBackoffMs)
     const text = [
       header,
       `- HTTP status: ${result.httpStatus}`,

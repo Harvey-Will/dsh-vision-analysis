@@ -158,8 +158,58 @@ async function readErrorText(response: Response): Promise<string> {
 export type FetchLike = typeof fetch
 
 /**
+ * Short-lived semantic cache: identical endpoint + model + prompt + image set
+ * within the TTL reuses the prior answer instead of issuing a second request.
+ * Bounded by entry count (oldest evicted first).
+ */
+export class VisionCache {
+  private entries = new Map<string, { result: VisionResult; expiresAt: number }>()
+
+  constructor(
+    /** Result lifetime in milliseconds; 0 disables storing. */
+    readonly ttlMs: number,
+    /** Maximum number of entries before the oldest is evicted. */
+    readonly maxEntries: number,
+  ) {}
+
+  private static cacheKey(endpoint: string, prompt: string, images: readonly LoadedImage[]): string {
+    const parts = images.map((img) => `${img.source}:${img.mimeType}:${img.base64 ?? img.source}`)
+    return [endpoint, prompt, ...parts].join('|')
+  }
+
+  get(endpoint: string, prompt: string, images: readonly LoadedImage[]): VisionResult | undefined {
+    const k = VisionCache.cacheKey(endpoint, prompt, images)
+    const hit = this.entries.get(k)
+    if (hit === undefined) return undefined
+    if (Date.now() > hit.expiresAt) {
+      this.entries.delete(k)
+      return undefined
+    }
+    return hit.result
+  }
+
+  set(endpoint: string, prompt: string, images: readonly LoadedImage[], result: VisionResult): void {
+    // ttlMs 0 disables storing entirely (a stored entry would be expired the
+    // same millisecond, so storing is pure waste); maxEntries 0 also no-ops.
+    if (this.maxEntries <= 0 || this.ttlMs <= 0) return
+    while (this.entries.size >= this.maxEntries) {
+      const oldest = this.entries.keys().next().value
+      if (oldest === undefined) break
+      this.entries.delete(oldest)
+    }
+    const k = VisionCache.cacheKey(endpoint, prompt, images)
+    this.entries.set(k, { result, expiresAt: Date.now() + this.ttlMs })
+  }
+
+  clear(): void {
+    this.entries.clear()
+  }
+}
+
+/**
  * Perform one vision request: build the body, fetch with caller cancellation
- * and a timeout, validate the HTTP status, and extract the answer.
+ * and a timeout, validate the HTTP status, and extract the answer. On HTTP 429
+ * or transient 5xx, retries with exponential backoff up to `retryCount` times.
  * @param config - resolved configuration.
  * @param endpoint - the composed endpoint URL.
  * @param prompt - the composed instruction text.
@@ -176,7 +226,46 @@ export async function callVision(
   images: readonly LoadedImage[],
   tuning: CallTuning,
   signal: AbortSignal,
+  retryCount = 0,
+  retryBackoffMs = 2000,
   fetchImpl: FetchLike = fetch,
+): Promise<VisionResult> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callVisionOnce(config, endpoint, prompt, images, tuning, signal, fetchImpl)
+    } catch (error) {
+      if (signal.aborted) throw error
+      const isRetryable =
+        error instanceof VisionApiError &&
+        (error.httpStatus === 429 || (error.httpStatus !== undefined && error.httpStatus >= 500))
+      if (!isRetryable || attempt >= retryCount) throw error
+      // Exponential backoff: 2s, 4s, 8s … abort-aware. The abort listener is
+      // removed once the wait completes so it never leaks on the shared signal.
+      const delay = retryBackoffMs * Math.pow(2, attempt)
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer)
+          reject(new DOMException('Aborted', 'AbortError'))
+        }
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        }, delay)
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+    }
+  }
+}
+
+/** Single attempt (no retry). */
+async function callVisionOnce(
+  config: Config,
+  endpoint: string,
+  prompt: string,
+  images: readonly LoadedImage[],
+  tuning: CallTuning,
+  signal: AbortSignal,
+  fetchImpl: FetchLike,
 ): Promise<VisionResult> {
   const started = Date.now()
   const apiKey = resolveApiKey(config)

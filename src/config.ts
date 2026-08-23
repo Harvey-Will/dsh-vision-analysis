@@ -35,6 +35,14 @@ export interface Config {
   temperature: number
   /** Per-mode output tuning overrides. */
   modes: Partial<Record<VisionMode, ModeTuning>>
+  /** Result cache TTL in milliseconds (0 disables caching). */
+  cacheTtlMs: number
+  /** Maximum number of cached results. */
+  cacheMaxEntries: number
+  /** Number of retries on HTTP 429 / transient 5xx. */
+  retryCount: number
+  /** Base backoff in ms for the first retry; doubles per subsequent attempt. */
+  retryBackoffMs: number
 }
 
 /** Environment variable that supplies the API key when `config.apiKey` is empty. */
@@ -88,6 +96,23 @@ export const Config: Schema<Config> = Schema.object({
         .description('Override of the temperature for this mode.'),
     }).description('Per-mode output tuning.'),
   ).default({}).description('Per-mode overrides of maxTokens and temperature.'),
+  cacheTtlMs: Schema.natural()
+    .min(0)
+    .default(60_000)
+    .description('Result cache TTL in milliseconds (0 disables caching).'),
+  cacheMaxEntries: Schema.natural()
+    .min(1)
+    .default(32)
+    .description('Maximum number of cached results.'),
+  retryCount: Schema.natural()
+    .min(0)
+    .max(5)
+    .default(1)
+    .description('Retries on HTTP 429 / transient 5xx.'),
+  retryBackoffMs: Schema.natural()
+    .min(100)
+    .default(2000)
+    .description('Base backoff in ms for the first retry; doubles per subsequent attempt.'),
 })
 
 /** Error thrown when configuration cannot be used for a call. */

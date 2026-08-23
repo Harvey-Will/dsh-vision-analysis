@@ -29,7 +29,8 @@
     "build": "tsc -p tsconfig.json",
     "build:client": "tsc -p tsconfig.json && tsdown --env.DSH_BUILD_FACE client",
     "prepare": "tsc -p tsconfig.json && tsdown --env.DSH_BUILD_FACE client",
-    "typecheck": "tsc -p tsconfig.json --pretty false"
+    "typecheck": "tsc -p tsconfig.json --pretty false",
+    "test": "node --test"
   },
   "keywords": [
     "dsh",
