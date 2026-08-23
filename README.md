@@ -10,6 +10,8 @@
 
 **English** · [中文](README.zh.md)
 
+**中文：** DeepSeek Harness 图像理解插件 · 8 种分析模式（描述 / OCR / 图表取数 / UI 评审 / 目标检测 / 对比 / 代码生成 / 端点诊断）· 兼容任意 OpenAI / Anthropic 视觉端点 · 支持本地图片、链接与截图 · 密钥掩码、隐私优先。
+
 </div>
 
 ---
