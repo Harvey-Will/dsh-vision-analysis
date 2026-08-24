@@ -3,7 +3,7 @@
  * reads for local files and http(s) URLs, and the image-reference model used
  * by the vision client (local files are base64-embedded, URLs are passed
  * through verbatim).
- * @module dsh-universal-vision-analysis/media
+ * @module dsh-vision-analysis/media
  */
 
 import { readFile, stat } from 'node:fs/promises'

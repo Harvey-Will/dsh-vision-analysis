@@ -33,31 +33,65 @@
 
 ## 🖼️ 演示
 
-粘贴图片、提出问题、得到真实回答——即使是纯文本模型也可以。图片会被路由到你配置的视觉端点，分析结果直接落进对话：
+三个日常场景。下面的输出都是真实结果——每个场景由不同的免费视觉模型自动作答（某个模型被限流时，插件会自动切换下一个）。
 
-<p align="center">
-  <img src="assets/demo.png" alt="dsh-vision-analysis 实际效果：在 DSH 对话中贴入一张 DeepSeek 娘化同人图，被准确识别并给出完整推理" width="640">
-</p>
+**1. OCR —— 从文档/截图中提取文字**
 
-<sub>截图里：贴入图片 + 提问「这是谁？」——视觉端点识别出 DeepSeek 的娘化同人形象并逐步给出推理，全程无需切换模型、无需保存文件到本地。</sub>
+<p align="center"><img src="assets/demo-ocr.png" alt="一份待转写的运维周报文档" width="460"></p>
+
+> Weekly Ops Report — 2026-W33
+> Item 01 · Pending action: review queue / escalate blocker
+> Item 02 · Pending action: review queue / escalate blocker
+> ……（所有行逐字转写）
+
+**2. 图表 → 结构化数据，Agent 直接可用**
+
+<p align="center"><img src="assets/demo-chart.png" alt="月度营收柱状图" width="460"></p>
+
+```json
+{ "title": "Monthly Revenue — Q1–Q3", "rows": [["Jan","82"],["Feb","95"],…] }
+```
+
+**3. UI 评审 —— 以设计师视角审视你的界面**
+
+<p align="center"><img src="assets/demo-ui.png" alt="电商商品页线框稿" width="460"></p>
+
+> • "Add to cart" 与 "Checkout" 按钮样式不一致（高优先级）
+> • 商品名与价格层级不够突出（中优先级）
+> • 购物车条目缺少分隔、小计不够醒目（中优先级）
 
 ---
 
 ## 🚀 快速开始
 
 ```sh
-# 从 npm 安装（发布后）
-dsh plugin --profile web add dsh-vision-analysis
+# 从 GitHub 安装（无需 npm）
+dsh plugin --profile web add github:Harvey-Will/dsh-vision-analysis
 
-# 从本地 tarball 安装（无需 registry）
-dsh plugin --profile web add ./dsh-vision-analysis-0.1.0-rc.8.tgz
+# 或在 Harness 插件市场里一键安装
 ```
 
-重启 web profile 后，直接对 Agent 说：
+重启 web profile 后，让 Agent 分析一张本地图片或链接：
 
 > "用 analyze_image 把 `/tmp/screenshot.png` 里的文字全部转写出来。"
 
-就这么简单——**零配置**：插件默认指向 OVHcloud 免费视觉通道，匿名即可调用，并会自动为纯文本模型桥接图片。
+这一步**零配置可用**：插件默认指向免费匿名视觉端点（OVHcloud AI Endpoints，Qwen2.5-VL-72B），无需 API Key。
+
+### 两种使用方式
+
+**1. `analyze_image` 工具（零配置）** —— Agent 读取本地路径、`http(s)` URL 或 data URL，装完即用。
+
+**2. 直接在对话中粘贴图片（图片桥接）** —— 需要两步配置：
+
+- 在插件配置的 `bridgeModels` 中加入该模型；
+- 在 `settings.yaml` 里给该模型的 `inputModalities` 声明 `image`（这是 Harness 放行图片消息的前提）。
+
+```yaml
+# ① ~/.dsh/settings.yaml —— llm-deepseek.models 下，给每个纯文本模型加：
+#    inputModalities: [text, image]
+# ② 插件配置：
+bridgeModels: [deepseek-v4-flash]
+```
 
 <details>
 <summary>使用自己的端点（可选）</summary>
@@ -68,7 +102,7 @@ config:
   baseURL: https://api.siliconflow.cn/v1
   apiKey: your-key           # 匿名/本地端点可留空
   model: Qwen/Qwen2.5-VL-72B-Instruct
-  bridgeModels: [你的纯文本模型]   # 其图片将经由本插件处理
+  fallbackModels: [Qwen3.5-9B]   # 同一端点下的备用模型，429 时自动切换
 ```
 </details>
 
@@ -152,7 +186,7 @@ analyze_image(image?, images?, mode?, prompt?)
 
 **为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 社区打造** · [dsh-plugin 话题](https://github.com/topics/dsh-plugin) · [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 
-发现 Bug 或有新想法？[提交 Issue](https://github.com/<your-org>/dsh-vision-analysis/issues)——欢迎 PR。
+发现 Bug 或有新想法？[提交 Issue](https://github.com/Harvey-Will/dsh-vision-analysis/issues)——欢迎 PR。
 
 [MIT License](LICENSE)
 

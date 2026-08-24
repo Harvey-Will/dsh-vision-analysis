@@ -2,7 +2,7 @@
  * Plugin configuration: the Schemastery `Config` schema that the Harness
  * settings UI renders, plus pure resolution helpers (endpoint composition,
  * per-mode tuning, API key resolution).
- * @module dsh-universal-vision-analysis/config
+ * @module dsh-vision-analysis/config
  */
 
 import Schema from '@deepseek-ai/schemastery'

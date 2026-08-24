@@ -108,5 +108,9 @@
     "type": "git",
     "url": "git+https://github.com/Harvey-Will/dsh-vision-analysis.git"
   },
+  "bugs": {
+    "url": "https://github.com/Harvey-Will/dsh-vision-analysis/issues"
+  },
+  "author": "Harvey-Will",
   "homepage": "https://github.com/Harvey-Will/dsh-vision-analysis#readme"
 }

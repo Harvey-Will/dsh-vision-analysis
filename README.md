@@ -35,31 +35,65 @@ Your text-only agent can finally "see" — **with a free vision source built in*
 
 ## 🖼️ Demo
 
-Paste an image, ask a question, get a real answer — even on a text-only model. The image is routed to your configured vision endpoint and the analysis lands straight in the conversation:
+Three everyday scenarios. The outputs below are real — each was answered by a different free vision model automatically (when one is rate limited, the plugin fails over to the next).
 
-<p align="center">
-  <img src="assets/demo.png" alt="dsh-vision-analysis in action: a pasted image of a DeepSeek fan-art character is identified with full reasoning in a DSH conversation" width="640">
-</p>
+**1. OCR — pull text out of documents and screenshots**
 
-<sub>In the screenshot: a pasted image plus the question "这是谁?" — the vision endpoint identifies the DeepSeek fan-art character and walks through its reasoning, all without switching models or saving files locally.</sub>
+<p align="center"><img src="assets/demo-ocr.png" alt="A short ops-report document to transcribe" width="460"></p>
+
+> Weekly Ops Report — 2026-W33
+> Item 01 · Pending action: review queue / escalate blocker
+> Item 02 · Pending action: review queue / escalate blocker
+> … (all lines transcribed verbatim)
+
+**2. Charts → structured data your agent can use**
+
+<p align="center"><img src="assets/demo-chart.png" alt="A monthly revenue bar chart" width="460"></p>
+
+```json
+{ "title": "Monthly Revenue — Q1–Q3", "rows": [["Jan","82"],["Feb","95"],…] }
+```
+
+**3. UI review — a designer's eye on your interface**
+
+<p align="center"><img src="assets/demo-ui.png" alt="A simple e-commerce product page mockup" width="460"></p>
+
+> • Inconsistent button styling across "Add to cart" and "Checkout" (High)
+> • Product name and price lack visual hierarchy (Medium)
+> • Cart items unstructured; subtotal not visually distinct (Medium)
 
 ---
 
 ## 🚀 Quick start
 
 ```sh
-# From npm (once published)
-dsh plugin --profile web add dsh-vision-analysis
+# From GitHub (no npm needed)
+dsh plugin --profile web add github:Harvey-Will/dsh-vision-analysis
 
-# From a local tarball (no registry needed)
-dsh plugin --profile web add ./dsh-vision-analysis-0.1.0-rc.8.tgz
+# Or one-click from the plugin market inside the Harness
 ```
 
-Then restart the web profile and ask your agent:
+Restart the web profile and ask your agent to analyze an image by path or URL:
 
 > *"Use analyze_image to OCR `/tmp/screenshot.png` and tell me what it says."*
 
-That's it — **zero configuration needed**: the plugin ships pointed at the OVHcloud free vision tier, works anonymously, and bridges images for text-only models automatically.
+That works with **zero configuration**: the plugin ships pointed at a free anonymous vision endpoint (OVHcloud AI Endpoints, Qwen2.5-VL-72B) — no API key required.
+
+### Two ways to use it
+
+**1. `analyze_image` tool (zero config)** — the agent reads a local path, an `http(s)` URL, or a data URL. Works immediately after install.
+
+**2. Paste images straight into the conversation (image bridge)** — requires two setup steps:
+
+- add the model to `bridgeModels` in the plugin config;
+- declare `image` in that model's `inputModalities` in `settings.yaml` (this is what lets the Harness admit image prompts for it).
+
+```yaml
+# ① ~/.dsh/settings.yaml — under llm-deepseek.models, for each text-only model:
+#    inputModalities: [text, image]
+# ② plugin config:
+bridgeModels: [deepseek-v4-flash]
+```
 
 <details>
 <summary>Bring your own endpoint (optional)</summary>
@@ -70,7 +104,7 @@ config:
   baseURL: https://api.siliconflow.cn/v1
   apiKey: your-key           # leave empty for anonymous/local endpoints
   model: Qwen/Qwen2.5-VL-72B-Instruct
-  bridgeModels: [your-text-only-model]   # route their images through the plugin
+  fallbackModels: [Qwen3.5-9B]   # same-endpoint alternates tried on HTTP 429
 ```
 </details>
 
@@ -154,7 +188,7 @@ All fields are editable live from `Settings → 插件配置` (API key field is 
 
 **Built for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) community** · [dsh-plugin topic](https://github.com/topics/dsh-plugin) · [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 
-Found a bug or have an idea? [Open an issue](https://github.com/<your-org>/dsh-vision-analysis/issues) — PRs welcome.
+Found a bug or have an idea? [Open an issue](https://github.com/Harvey-Will/dsh-vision-analysis/issues) — PRs welcome.
 
 [MIT License](LICENSE)
 

@@ -2,7 +2,7 @@
  * The vision HTTP client: request construction for the OpenAI
  * `chat/completions` and Anthropic `messages` wire formats, the bounded
  * fetch with cancellation and timeout, and response validation/extraction.
- * @module dsh-universal-vision-analysis/vision-client
+ * @module dsh-vision-analysis/vision-client
  */
 
 import type { Config, } from './config.js'

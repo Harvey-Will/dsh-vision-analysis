@@ -2,7 +2,7 @@
  * The eight analysis modes of the `analyze_image` tool: their identifiers,
  * per-mode output tuning defaults, and the instruction templates the vision
  * model receives when the caller does not supply a custom `prompt`.
- * @module dsh-universal-vision-analysis/modes
+ * @module dsh-vision-analysis/modes
  */
 
 /** The eight analysis modes offered by the tool. */
