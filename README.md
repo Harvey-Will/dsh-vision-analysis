@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![DSH 0.1.x](https://img.shields.io/badge/DSH-0.1.x-3b82f6)](https://github.com/deepseek-ai/deepseek-harness)
 [![dsh-plugin](https://img.shields.io/badge/dsh--plugin-%E2%9C%94-black?logo=github)](https://github.com/topics/dsh-plugin)
+[![awesome-dsh-plugin](https://img.shields.io/badge/awesome--dsh--plugin-%E2%9C%94-blueviolet?logo=github&labelColor=blueviolet)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 
 **English** · [中文](README.zh.md)
 
