@@ -35,6 +35,20 @@ export interface Config {
   temperature: number
   /** Per-mode output tuning overrides. */
   modes: Partial<Record<VisionMode, ModeTuning>>
+  /** Ask chart-data and ocr for machine-readable JSON; plain-text fallback when unsupported. */
+  structuredOutputs: boolean
+  /** Route pasted images to the configured vision model when the active model is text-only. */
+  imageBridge: boolean
+  /**
+   * Model ids whose image content is routed through this plugin's vision
+   * endpoint. These are text-only models that the deployment declared
+   * image-capable (inputModalities includes `image` in settings.yaml) so the
+   * harness admits image prompts; the plugin intercepts them before the LLM
+   * call. Models NOT in this list keep their native route untouched.
+   */
+  bridgeModels: string[]
+  /** Optional instruction appended to the user question when bridging images. */
+  bridgePrompt: string
   /** Result cache TTL in milliseconds (0 disables caching). */
   cacheTtlMs: number
   /** Maximum number of cached results. */
@@ -96,6 +110,18 @@ export const Config: Schema<Config> = Schema.object({
         .description('Override of the temperature for this mode.'),
     }).description('Per-mode output tuning.'),
   ).default({}).description('Per-mode overrides of maxTokens and temperature.'),
+  structuredOutputs: Schema.boolean()
+    .default(true)
+    .description('Ask chart-data and ocr modes for machine-readable JSON; falls back to plain text when the endpoint lacks support.'),
+  imageBridge: Schema.boolean()
+    .default(true)
+    .description('Route pasted/sent images to the configured vision model when the active model is text-only, so images can be sent directly regardless of the main model.'),
+  bridgeModels: Schema.array(Schema.string())
+    .default([])
+    .description('Text-only model ids routed through this plugin (images go to the configured vision endpoint). These models are marked as originally text-only: the deployment must also declare `image` in their inputModalities (settings.yaml) or the harness will still reject image prompts. Removing a model here cancels bridging — remember to remove `image` from its inputModalities to restore the text-only declaration. Models not listed here (e.g. native multimodal ones) keep their direct route.'),
+  bridgePrompt: Schema.string()
+    .default('')
+    .description('Optional instruction appended to the user question when bridging images to the vision model (default: a neutral analyze-and-answer instruction).'),
   cacheTtlMs: Schema.natural()
     .min(0)
     .default(60_000)

@@ -12,19 +12,24 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { Config, resolveApiKey, resolveConfig } from './config.js'
 import type { ApiFormat } from './config.js'
 import { ImageSourceError, loadImage } from './media.js'
 import { composePrompt, resolveTuning, VISION_MODES } from './modes.js'
 import type { VisionMode } from './modes.js'
+import { appendStructured, extractJsonObject, isStructuredMode, isValidShape } from './structured.js'
+import { installImageBridge } from './bridge.js'
+import type { BridgeServices } from './bridge.js'
+import { bridgeChangeNotice } from './model-registry.js'
 import { callVision, VisionCache } from './vision-client.js'
 
 /** The plugin's Cordis identity. */
 export const name = 'vision-analysis'
 
-/** Hard dependency on the tool registry; `apply` runs only once it is ready. */
-export const inject = ['tools']
+/** Hard dependencies; `apply` runs only once they are ready. */
+export const inject = ['tools', 'llm', 'attachments']
 
 /** The settings namespace under which the plugin's configuration is edited. */
 export const SETTINGS_NAMESPACE = 'vision-analysis'
@@ -57,6 +62,8 @@ export interface AnalyzeImageOutput {
   latencyMs?: number
   /** Whether the endpoint signalled token-budget truncation. */
   truncated?: boolean
+  /** Parsed machine-readable answer for structured modes (chart-data, ocr), when the reply was valid JSON of the expected shape. */
+  data?: Record<string, JsonValue>
 }
 
 const TOOL_HEAD =
@@ -70,12 +77,49 @@ const TOOL_HEAD =
   + 'object-detect, compare, code-gen, debug) and, for anything but a plain description, pass a '
   + 'precise `prompt` — e.g. "transcribe all text", "extract the table as CSV", '
   + '"diagnose the UI layout problems" — since a targeted instruction produces a much more '
-  + 'useful answer. The image itself never enters the conversation: only the returned text is shown.'
+  + 'useful answer. The image itself never enters the conversation: only the returned text is shown. '
+  + 'The data-heavy modes (chart-data, ocr) also return a machine-readable `data` object '
+  + 'alongside the text when structured output is enabled.'
 
 /** Mask a base URL for display in diagnostics (query strings may carry tokens). */
 function maskEndpoint(endpoint: string): string {
   const withoutQuery = endpoint.split('?')[0]!
   return withoutQuery
+}
+
+/**
+ * Assemble the tool output for one finished call: shared by the cache-hit and
+ * network paths so a cached structured answer still yields its `data` object.
+ * @param active - the configuration in effect (supplies the model label).
+ * @param mode - the analysis mode that produced the answer.
+ * @param imageCount - number of images in the call.
+ * @param result - the vision result (from the network or the cache).
+ * @param structured - whether structured output was requested for this call.
+ */
+function finishOutput(
+  active: Config,
+  mode: VisionMode,
+  imageCount: number,
+  result: { text: string; httpStatus?: number; latencyMs?: number; truncated?: boolean },
+  structured: boolean,
+): AnalyzeImageOutput {
+  let data: Record<string, JsonValue> | undefined
+  if (structured) {
+    const parsed = extractJsonObject(result.text)
+    if (parsed !== undefined && isValidShape(mode, parsed)) data = parsed as Record<string, JsonValue>
+  }
+  return {
+    text: result.truncated
+      ? `${result.text}\n\n[output truncated at the token limit]`
+      : result.text,
+    mode,
+    model: active.model,
+    imageCount,
+    httpStatus: result.httpStatus,
+    latencyMs: result.latencyMs,
+    truncated: result.truncated,
+    ...(data !== undefined ? { data } : {}),
+  }
 }
 
 /**
@@ -85,15 +129,38 @@ function maskEndpoint(endpoint: string): string {
  */
 export function apply(ctx: Context, config: Config = {} as Config): void {
   let current: () => Config = () => config
+  const logger = ctx.logger('vision-analysis')
   // Short-lived result cache. Rebuilt lazily per call so config edits to the
   // TTL / entry cap take effect immediately (a parameter change drops old
   // entries, which is the desired invalidation behavior).
   let cache: VisionCache | undefined
+  // Image bridge: routes pasted images to the vision endpoint for bridged
+  // (declared image-capable, originally text-only) models, so images can be
+  // sent directly regardless of the main model.
+  const bridgeServices: BridgeServices = {
+    llm: ctx.llm,
+    attachments: ctx.attachments,
+  }
+  ctx.effect(() => installImageBridge(ctx, bridgeServices, current), 'uva: image bridge')
+
+  // Bridge list lifecycle: inform on first setup and on every removal, and
+  // keep the "originally text-only, routed through the plugin" marker in sync.
+  let previousBridgeModels: readonly string[] = []
+  const notifyBridgeLifecycle = (): void => {
+    const active = current()
+    const notice = bridgeChangeNotice(active, previousBridgeModels)
+    previousBridgeModels = active.bridgeModels ?? []
+    if (notice !== undefined) logger.warn(`[image bridge] ${notice.replaceAll('\n', ' ')}`)
+  }
+  notifyBridgeLifecycle()
+
   installSettingsSection(ctx, settingsNamespace(SETTINGS_NAMESPACE), Config, config, {
     setSource: (source) => {
       current = source
     },
-    onChange: () => {},
+    onChange: () => {
+      notifyBridgeLifecycle()
+    },
     validate: (value) => {
       resolveConfig(value)
     },
@@ -137,6 +204,7 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
           httpStatus: { type: 'integer' },
           latencyMs: { type: 'integer' },
           truncated: { type: 'boolean' },
+          data: { type: 'object', additionalProperties: true },
         },
       },
       render: (_args, value) => [{ type: 'text', text: value.text }],
@@ -161,11 +229,22 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
         { maxTokens: active.maxTokens, temperature: active.temperature },
         active.modes,
       )
-      const prompt = composePrompt(mode, images.length, args.prompt)
+      const basePrompt = composePrompt(mode, images.length, args.prompt)
+      // Structured output: chart-data / ocr get a JSON-shape instruction
+      // appended (custom prompts included — the caller still wants data) and,
+      // on OpenAI-format endpoints, a `response_format` hint. Everything
+      // degrades to plain text when unsupported. Default-on: only an explicit
+      // `structuredOutputs: false` turns it off.
+      const structured = active.structuredOutputs !== false && isStructuredMode(mode)
+      const prompt = structured ? appendStructured(basePrompt, mode) : basePrompt
+      const callOpts = structured && active.apiFormat !== 'anthropic'
+        ? { responseFormat: 'json_object' as const }
+        : {}
 
       // Caching is skipped for `debug` (it must always hit the network) and
       // when the TTL is 0. On a hit the prior successful answer is returned
-      // without issuing a second request.
+      // without issuing a second request. The cache key includes the full
+      // prompt, so structured and plain variants never collide.
       const useCache = mode !== 'debug' && active.cacheTtlMs > 0
       if (useCache) {
         if (cache === undefined || cache.ttlMs !== active.cacheTtlMs || cache.maxEntries !== active.cacheMaxEntries) {
@@ -173,39 +252,18 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
         }
         const hit = cache.get(endpoint, prompt, images)
         if (hit !== undefined) {
-          return {
-            text: hit.truncated
-              ? `${hit.text}\n\n[output truncated at the token limit]`
-              : hit.text,
-            mode,
-            model: active.model,
-            imageCount: images.length,
-            httpStatus: hit.httpStatus,
-            latencyMs: hit.latencyMs,
-            truncated: hit.truncated,
-          }
+          return finishOutput(active, mode, images.length, hit, structured)
         }
       }
 
       if (mode === 'debug') {
         return runDebug(active, endpoint, mode, images, prompt, tuning, exec.signal, active.retryCount, active.retryBackoffMs)
       }
-      const result = await callVision(active, endpoint, prompt, images, tuning, exec.signal, active.retryCount, active.retryBackoffMs)
+      const result = await callVision(active, endpoint, prompt, images, tuning, exec.signal, active.retryCount, active.retryBackoffMs, fetch, callOpts)
       if (useCache) {
         cache!.set(endpoint, prompt, images, result)
       }
-      const text = result.truncated
-        ? `${result.text}\n\n[output truncated at the token limit]`
-        : result.text
-      return {
-        text,
-        mode,
-        model: active.model,
-        imageCount: images.length,
-        httpStatus: result.httpStatus,
-        latencyMs: result.latencyMs,
-        truncated: result.truncated,
-      }
+      return finishOutput(active, mode, images.length, result, structured)
     },
     presentCall(args) {
       const sources = args.images !== undefined && args.images.length > 0
@@ -310,6 +368,35 @@ export {
   sniffMime,
 } from './media.js'
 export type { ImageMimeType, LoadedImage } from './media.js'
+export {
+  appendStructured,
+  extractJsonObject,
+  isStructuredMode,
+  isValidShape,
+  STRUCTURED_MODES,
+  structuredInstruction,
+} from './structured.js'
+export {
+  BRIDGE_DEFAULT_PROMPT,
+  bridgeImagePlaceholder,
+  imageBlocksOf,
+  installImageBridge,
+  lastUserMessageIndex,
+  messagesContainImage,
+  planBridge,
+  projectImagesInMessages,
+  textOf,
+  textResponseStream,
+} from './bridge.js'
+export type { BridgePlan, BridgeServices } from './bridge.js'
+export {
+  bridgeCancelNotice,
+  bridgeChangeNotice,
+  bridgeSetupNotice,
+  classifyModel,
+  isBridged,
+} from './model-registry.js'
+export type { ModelRoute } from './model-registry.js'
 export {
   buildVisionBody,
   callVision,

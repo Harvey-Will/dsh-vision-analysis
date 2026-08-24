@@ -98,10 +98,15 @@ interface VisionDockProps {
   sessionId?: string
   /** Composer input state, provided to every session-scope entry. */
   useInput?: (selector: (state: unknown) => unknown) => unknown
-  /** Injectable: the shared API client (current model resolution). */
+  /** Injectable: the shared API client (current model + plugin settings). */
   api?: {
     sessions: {
       models(request: { sessionId: string }): Promise<{ result?: { current?: { model?: string } } }>
+    }
+    settings?: {
+      describe?(request: object): Promise<{
+        result?: { namespaces?: Array<{ ns?: string; value?: unknown }> }
+      }>
     }
   }
   /** Injectable: bound translator for this namespace. */
@@ -115,6 +120,7 @@ function VisionInterpretDock({
   const inputState = useInput === undefined ? undefined : useInput((state) => state)
   const imageIds: string[] = (inputState as { imageIds?: string[] } | undefined)?.imageIds ?? []
   const [modelImageCapable, setModelImageCapable] = useState<boolean | null>(null)
+  const [bridgeOn, setBridgeOn] = useState<boolean>(true)
 
   useEffect(() => {
     if (sessionId === undefined || api === undefined) return
@@ -131,11 +137,32 @@ function VisionInterpretDock({
     }
   }, [sessionId, api])
 
-  // Show the hint unless the model is CONFIRMED image-capable. An unknown
-  // capability (query failed, model not resolved) must still show it —
-  // otherwise the user only has the native send, which the host rejects for a
-  // text-only model.
-  const showHint = imageIds.length > 0 && modelImageCapable !== true
+  // The image bridge routes pasted images to the configured vision model for
+  // text-only models, so the save-locally banner is only needed when the
+  // bridge is explicitly disabled. Unknown bridge state follows the plugin's
+  // default (on): images send directly and the host side handles routing.
+  useEffect(() => {
+    if (api === undefined || api.settings?.describe === undefined) return
+    let cancelled = false
+    api.settings.describe({}).then((response) => {
+      if (cancelled) return
+      const namespace = (response.result?.namespaces ?? []).find((n) => n.ns === 'vision-analysis')
+      const value = namespace?.value as { imageBridge?: boolean } | undefined
+      setBridgeOn(value?.imageBridge === false ? false : true)
+    }).catch(() => {
+      if (!cancelled) setBridgeOn(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [api])
+
+  // Show the hint unless the model is CONFIRMED image-capable, or the image
+  // bridge handles the image for a text-only model. An unknown capability
+  // (query failed, model not resolved) must still show it when the bridge is
+  // off — otherwise the user only has the native send, which the host rejects
+  // for a text-only model.
+  const showHint = imageIds.length > 0 && modelImageCapable !== true && bridgeOn === false
 
   if (!showHint) return null
 

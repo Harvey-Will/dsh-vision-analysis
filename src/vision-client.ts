@@ -58,6 +58,8 @@ function imageBlock(image: LoadedImage): ImageBlock {
  * @param prompt - the composed instruction text.
  * @param images - the loaded images.
  * @param tuning - effective output tuning.
+ * @param opts - optional extras; `responseFormat` asks OpenAI-format endpoints
+ *   for a JSON-only answer (ignored for Anthropic, which has no such field).
  * @returns the request body object (JSON-serializable).
  */
 export function buildVisionBody(
@@ -65,6 +67,7 @@ export function buildVisionBody(
   prompt: string,
   images: readonly LoadedImage[],
   tuning: CallTuning,
+  opts: { responseFormat?: 'json_object' } = {},
 ): unknown {
   const blocks = images.map(imageBlock)
   if (config.apiFormat === 'anthropic') {
@@ -87,6 +90,7 @@ export function buildVisionBody(
     model: config.model,
     max_completion_tokens: tuning.maxTokens,
     temperature: tuning.temperature,
+    ...(opts.responseFormat !== undefined ? { response_format: { type: opts.responseFormat } } : {}),
     messages: [{
       role: 'user',
       content: [
@@ -217,6 +221,9 @@ export class VisionCache {
  * @param tuning - effective output tuning.
  * @param signal - caller cancellation, forwarded to the request.
  * @param fetchImpl - fetch implementation (defaults to the global fetch).
+ * @param opts - optional extras; `responseFormat` asks OpenAI-format endpoints
+ *   for a JSON-only answer, and when the endpoint rejects that parameter the
+ *   request is retried once without it (prompt-only structured instruction).
  * @returns the validated result.
  */
 export async function callVision(
@@ -229,12 +236,25 @@ export async function callVision(
   retryCount = 0,
   retryBackoffMs = 2000,
   fetchImpl: FetchLike = fetch,
+  opts: { responseFormat?: 'json_object' } = {},
 ): Promise<VisionResult> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await callVisionOnce(config, endpoint, prompt, images, tuning, signal, fetchImpl)
+      return await callVisionOnce(config, endpoint, prompt, images, tuning, signal, fetchImpl, opts)
     } catch (error) {
       if (signal.aborted) throw error
+      // An endpoint that does not know `response_format` rejects the whole
+      // request with a 4xx naming it. The JSON-shape instruction in the prompt
+      // still stands, so one plain retry recovers the feature gracefully.
+      if (
+        opts.responseFormat !== undefined &&
+        error instanceof VisionApiError &&
+        error.httpStatus !== undefined &&
+        error.httpStatus >= 400 && error.httpStatus < 500 &&
+        /response_format|json_object|json mode|response format/i.test(error.message)
+      ) {
+        return callVision(config, endpoint, prompt, images, tuning, signal, 0, retryBackoffMs, fetchImpl, {})
+      }
       const isRetryable =
         error instanceof VisionApiError &&
         (error.httpStatus === 429 || (error.httpStatus !== undefined && error.httpStatus >= 500))
@@ -266,6 +286,7 @@ async function callVisionOnce(
   tuning: CallTuning,
   signal: AbortSignal,
   fetchImpl: FetchLike,
+  opts: { responseFormat?: 'json_object' } = {},
 ): Promise<VisionResult> {
   const started = Date.now()
   const apiKey = resolveApiKey(config)
@@ -283,7 +304,7 @@ async function callVisionOnce(
     response = await fetchImpl(endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify(buildVisionBody(config, prompt, images, tuning)),
+      body: JSON.stringify(buildVisionBody(config, prompt, images, tuning, opts)),
       signal: combined,
     })
   } catch (error) {
