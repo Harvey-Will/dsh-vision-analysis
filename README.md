@@ -30,6 +30,18 @@ Your text-only agent can finally "see" — without swapping your model, without 
 
 ---
 
+## 🖼️ Demo
+
+Paste an image, ask a question, get a real answer — even on a text-only model. The image is routed to your configured vision endpoint and the analysis lands straight in the conversation:
+
+<p align="center">
+  <img src="assets/demo.png" alt="dsh-vision-analysis in action: a pasted image of a DeepSeek fan-art character is identified with full reasoning in a DSH conversation" width="640">
+</p>
+
+<sub>In the screenshot: a pasted image plus the question "这是谁?" — the vision endpoint identifies the DeepSeek fan-art character and walks through its reasoning, all without switching models or saving files locally.</sub>
+
+---
+
 ## 🚀 Quick start
 
 ```sh
