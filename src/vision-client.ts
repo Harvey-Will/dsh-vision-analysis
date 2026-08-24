@@ -277,6 +277,91 @@ export async function callVision(
   }
 }
 
+/**
+ * Thrown when every model in a failover chain answered HTTP 429 — the
+ * deployment's quota for this endpoint is exhausted for now. The message
+ * carries user-facing recovery guidance; `triedModels` lists the attempts.
+ */
+export class VisionRateLimitError extends Error {
+  /** Every model id that was tried and answered 429, in order. */
+  readonly triedModels: string[]
+
+  constructor(message: string, triedModels: string[]) {
+    super(message)
+    this.name = 'VisionRateLimitError'
+    this.triedModels = triedModels
+  }
+}
+
+/** User-facing recovery guidance embedded in rate-limit errors. */
+export const RATE_LIMIT_GUIDANCE =
+  'Free-tier quotas reset every minute — retry shortly, register a free OVHcloud API key ' +
+  '(https://www.ovhcloud.com/en/public-cloud/ai-endpoints/) for higher limits, or configure your own vision endpoint.'
+
+/**
+ * Call the configured primary vision model and, when it is rate limited
+ * (HTTP 429), fall over to each fallback model in order. Non-429 errors are
+ * NOT retried across models — they indicate a problem failover cannot fix.
+ * @param config - resolved configuration (`config.model` is the primary).
+ * @param endpoint - the composed endpoint URL.
+ * @param prompt - the composed instruction text.
+ * @param images - the loaded images.
+ * @param tuning - effective output tuning.
+ * @param signal - caller cancellation, forwarded to each attempt.
+ * @param models - ordered model ids (see `visionModelChain`).
+ * @param retryCount - per-model transient-error retries before failing over.
+ * @param retryBackoffMs - base backoff for those retries.
+ * @param fetchImpl - fetch implementation (defaults to the global fetch).
+ * @param opts - optional extras forwarded to every attempt (e.g.
+ *   `responseFormat` for structured answers; a 429 still fails over, and the
+ *   plain-retry fallback inside each attempt drops it when unsupported).
+ * @returns the validated result plus the model that actually answered.
+ * @throws VisionRateLimitError when every model answers 429.
+ */
+export async function callVisionWithFailover(
+  config: Config,
+  endpoint: string,
+  prompt: string,
+  images: readonly LoadedImage[],
+  tuning: CallTuning,
+  signal: AbortSignal,
+  models: readonly string[],
+  retryCount = 0,
+  retryBackoffMs = 2000,
+  fetchImpl: FetchLike = fetch,
+  opts: { responseFormat?: 'json_object' } = {},
+): Promise<{ result: VisionResult; model: string }> {
+  const tried: string[] = []
+  for (const model of models) {
+    tried.push(model)
+    try {
+      const result = await callVision(
+        { ...config, model },
+        endpoint,
+        prompt,
+        images,
+        tuning,
+        signal,
+        retryCount,
+        retryBackoffMs,
+        fetchImpl,
+        opts,
+      )
+      return { result, model }
+    } catch (error) {
+      if (signal.aborted) throw error
+      if (error instanceof VisionApiError && error.httpStatus === 429) {
+        continue
+      }
+      throw error
+    }
+  }
+  throw new VisionRateLimitError(
+    `All vision models are rate limited (${tried.join(' → ')}). ${RATE_LIMIT_GUIDANCE}`,
+    tried,
+  )
+}
+
 /** Single attempt (no retry). */
 async function callVisionOnce(
   config: Config,

@@ -37,6 +37,13 @@ export interface Config {
   modes: Partial<Record<VisionMode, ModeTuning>>
   /** Ask chart-data and ocr for machine-readable JSON; plain-text fallback when unsupported. */
   structuredOutputs: boolean
+  /**
+   * Model ids tried in order when the primary vision model is rate limited
+   * (HTTP 429) — same endpoint, independent per-model quotas. Defaults to
+   * OVHcloud's multimodal lineup (matches the default baseURL); adjust when
+   * pointing at a different provider.
+   */
+  fallbackModels: string[]
   /** Route pasted images to the configured vision model when the active model is text-only. */
   imageBridge: boolean
   /**
@@ -62,19 +69,41 @@ export interface Config {
 /** Environment variable that supplies the API key when `config.apiKey` is empty. */
 export const API_KEY_ENV = 'UNIVERSAL_VISION_API_KEY'
 
+/**
+ * OVHcloud AI Endpoints free tier: OpenAI-compatible base URL. Anonymous
+ * calls are accepted (~2 requests/min per model, per IP); a free OVHcloud
+ * API key raises the limits.
+ */
+export const OVHCLOUD_BASE_URL = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1'
+
+/** OVHcloud's flagship free vision model (Qwen2.5-VL, 72B). */
+export const OVHCLOUD_DEFAULT_MODEL = 'Qwen2.5-VL-72B-Instruct'
+
+/**
+ * OVHcloud multimodal models tried in order when the primary vision model is
+ * rate limited. Same endpoint, independent per-model anonymous buckets.
+ */
+export const OVHCLOUD_FALLBACK_MODELS = [
+  'Qwen3.5-397B-A17B',
+  'Qwen3.6-27B',
+  'Qwen3.5-9B',
+]
+
 /** Schema of the plugin configuration, validated at load and rendered by the settings UI. */
 export const Config: Schema<Config> = Schema.object({
   apiFormat: Schema.union(['openai', 'anthropic'])
     .default('openai')
     .description('Wire format of the vision endpoint.'),
   baseURL: Schema.string()
-    .description('Base URL of the vision endpoint. Accepts a full /chat/completions (OpenAI) or /v1/messages (Anthropic) suffix.'),
+    .default(OVHCLOUD_BASE_URL)
+    .description('Base URL of the vision endpoint. Accepts a full /chat/completions (OpenAI) or /v1/messages (Anthropic) suffix. Defaults to the OVHcloud AI Endpoints free tier (anonymous, ~2 requests/min per model; register a free OVHcloud API key for higher limits).'),
   apiKey: Schema.string()
     .role('secret')
     .default('')
-    .description('API key for the vision endpoint. Empty means local model or the UNIVERSAL_VISION_API_KEY environment variable.'),
+    .description('API key for the vision endpoint. Empty means anonymous access (no Authorization header — works for the OVHcloud free tier and local models) or the UNIVERSAL_VISION_API_KEY environment variable.'),
   model: Schema.string()
-    .description('Vision model identifier, e.g. mimo-v2.5, gpt-4o-mini, llava:13b.'),
+    .default(OVHCLOUD_DEFAULT_MODEL)
+    .description('Vision model identifier. Defaults to the OVHcloud free vision model Qwen2.5-VL-72B-Instruct.'),
   defaultMode: Schema.union(['describe', 'ocr', 'ui-review', 'chart-data', 'object-detect', 'compare', 'code-gen', 'debug'])
     .default('describe')
     .description('Mode used when a call omits mode.'),
@@ -113,6 +142,9 @@ export const Config: Schema<Config> = Schema.object({
   structuredOutputs: Schema.boolean()
     .default(true)
     .description('Ask chart-data and ocr modes for machine-readable JSON; falls back to plain text when the endpoint lacks support.'),
+  fallbackModels: Schema.array(Schema.string())
+    .default([...OVHCLOUD_FALLBACK_MODELS])
+    .description('Models tried in order when the primary vision model is rate limited (HTTP 429) — same endpoint, independent per-model quotas. Defaults fit the OVHcloud free tier; adjust when using another provider.'),
   imageBridge: Schema.boolean()
     .default(true)
     .description('Route pasted/sent images to the configured vision model when the active model is text-only, so images can be sent directly regardless of the main model.'),
@@ -195,4 +227,16 @@ export function resolveApiKey(config: Config): string | undefined {
   const fromEnv = process.env[API_KEY_ENV]
   if (fromEnv !== undefined && fromEnv.trim() !== '') return fromEnv.trim()
   return undefined
+}
+
+/**
+ * The ordered vision-model chain for one deployment: the configured primary
+ * followed by the rate-limit fallbacks (duplicates of the primary removed).
+ * @param config - the configuration in effect.
+ * @returns model ids in failover order; never empty when a primary is set.
+ */
+export function visionModelChain(config: Config): string[] {
+  const primary = config.model
+  const rest = (config.fallbackModels ?? []).filter((model) => model !== '' && model !== primary)
+  return [primary, ...rest]
 }

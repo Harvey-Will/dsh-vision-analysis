@@ -36,9 +36,9 @@ import type { ContentBlock, GenerateOptions, ImageBlock, Message, StreamChunk } 
 import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { Config } from './config.js'
-import { resolveConfig } from './config.js'
+import { resolveConfig, visionModelChain } from './config.js'
 import { resolveTuning } from './modes.js'
-import { callVision } from './vision-client.js'
+import { callVisionWithFailover, VisionRateLimitError } from './vision-client.js'
 import type { LoadedImage } from './media.js'
 import { isBridged } from './model-registry.js'
 
@@ -172,7 +172,8 @@ export function* textResponseStream(text: string): Generator<StreamChunk> {
 }
 
 /**
- * Run one vision analysis for a bridge plan and return the answer text.
+ * Run one vision analysis for a bridge plan across the configured model
+ * chain (primary + rate-limit fallbacks) and return the answer text.
  * @param config - the plugin configuration in effect.
  * @param plan - the decided plan (prompt + loaded images).
  * @param signal - caller cancellation.
@@ -184,15 +185,33 @@ async function runBridgeVision(config: Config, plan: BridgePlan, signal?: AbortS
     { maxTokens: config.maxTokens, temperature: config.temperature },
     config.modes,
   )
-  const result = await callVision(
+  const { result } = await callVisionWithFailover(
     config,
     endpoint,
     plan.prompt,
     plan.images,
     tuning,
     signal ?? new AbortController().signal,
+    visionModelChain(config),
   )
   return result.text
+}
+
+/**
+ * The user-facing notice yielded when every vision model in the chain is rate
+ * limited: explains what happened and lays out the recovery options (wait for
+ * the per-minute reset, register a free OVHcloud API key, or configure a own
+ * endpoint).
+ * @param error - the exhausted-chain error carrying the tried models.
+ */
+export function bridgeRateLimitNotice(error: VisionRateLimitError): string {
+  return [
+    `⚠️ 免费视觉源额度已用完（依次尝试了 ${error.triedModels.join(' → ')}，均被限流），本轮图片未能分析。`,
+    '可以选择：① 稍等约一分钟再发（每分钟配额自动重置）；② 在插件配置中填入免费的 OVHcloud API Key 提升限额；③ 配置自己的视觉端点。',
+    '',
+    '⚠️ Image bridge: the free vision source is rate limited and this image could not be analyzed. '
+    + 'Wait about a minute and resend, add a free OVHcloud API key in the plugin settings, or configure your own endpoint.',
+  ].join('\n')
 }
 
 /**
@@ -260,7 +279,14 @@ export function installImageBridge(
       }
       try {
         yield* textResponseStream(await runBridgeVision(config, plan, options.signal))
-      } catch {
+      } catch (error) {
+        if (error instanceof VisionRateLimitError) {
+          // Every model in the chain is rate limited: tell the user what to
+          // do instead of degrading silently.
+          yield* textResponseStream(bridgeRateLimitNotice(error))
+          return
+        }
+        // Other failures: degrade to DSH's normal placeholder pipeline.
         yield* projectAndRedispatch(services, options)
       }
     })()

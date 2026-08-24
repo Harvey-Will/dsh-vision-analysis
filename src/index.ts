@@ -14,7 +14,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { Config, resolveApiKey, resolveConfig } from './config.js'
+import { Config, resolveApiKey, resolveConfig, visionModelChain } from './config.js'
 import type { ApiFormat } from './config.js'
 import { ImageSourceError, loadImage } from './media.js'
 import { composePrompt, resolveTuning, VISION_MODES } from './modes.js'
@@ -23,7 +23,7 @@ import { appendStructured, extractJsonObject, isStructuredMode, isValidShape } f
 import { installImageBridge } from './bridge.js'
 import type { BridgeServices } from './bridge.js'
 import { bridgeChangeNotice } from './model-registry.js'
-import { callVision, VisionCache } from './vision-client.js'
+import { callVision, callVisionWithFailover, VisionCache } from './vision-client.js'
 
 /** The plugin's Cordis identity. */
 export const name = 'vision-analysis'
@@ -102,6 +102,7 @@ function finishOutput(
   imageCount: number,
   result: { text: string; httpStatus?: number; latencyMs?: number; truncated?: boolean },
   structured: boolean,
+  answeredModel?: string,
 ): AnalyzeImageOutput {
   let data: Record<string, JsonValue> | undefined
   if (structured) {
@@ -113,7 +114,7 @@ function finishOutput(
       ? `${result.text}\n\n[output truncated at the token limit]`
       : result.text,
     mode,
-    model: active.model,
+    model: answeredModel ?? active.model,
     imageCount,
     httpStatus: result.httpStatus,
     latencyMs: result.latencyMs,
@@ -259,11 +260,14 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
       if (mode === 'debug') {
         return runDebug(active, endpoint, mode, images, prompt, tuning, exec.signal, active.retryCount, active.retryBackoffMs)
       }
-      const result = await callVision(active, endpoint, prompt, images, tuning, exec.signal, active.retryCount, active.retryBackoffMs, fetch, callOpts)
+      const { result, model } = await callVisionWithFailover(
+        active, endpoint, prompt, images, tuning, exec.signal,
+        visionModelChain(active), active.retryCount, active.retryBackoffMs, fetch, callOpts,
+      )
       if (useCache) {
         cache!.set(endpoint, prompt, images, result)
       }
-      return finishOutput(active, mode, images.length, result, structured)
+      return finishOutput(active, mode, images.length, result, structured, model)
     },
     presentCall(args) {
       const sources = args.images !== undefined && args.images.length > 0
@@ -347,7 +351,11 @@ export type { ApiFormat }
 export {
   API_KEY_ENV,
   ConfigError,
+  OVHCLOUD_BASE_URL,
+  OVHCLOUD_DEFAULT_MODEL,
+  OVHCLOUD_FALLBACK_MODELS,
   resolveEndpoint,
+  visionModelChain,
 } from './config.js'
 export {
   composePrompt,
@@ -400,7 +408,10 @@ export type { ModelRoute } from './model-registry.js'
 export {
   buildVisionBody,
   callVision,
+  callVisionWithFailover,
   extractVisionText,
+  RATE_LIMIT_GUIDANCE,
   VisionApiError,
+  VisionRateLimitError,
 } from './vision-client.js'
 export type { CallTuning, FetchLike, VisionResult } from './vision-client.js'
