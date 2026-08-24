@@ -3,10 +3,10 @@
 <img src="assets/banner.svg" alt="DSH Vision Analysis — 为 DeepSeek Harness 提供图像理解能力" width="100%">
 
 [![npm version](https://img.shields.io/npm/v/dsh-vision-analysis?label=npm&color=blue)](https://www.npmjs.com/package/dsh-vision-analysis)
+[![vision source: FREE](https://img.shields.io/badge/vision%20source-FREE-10b981)](#-演示)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![DSH 0.1.0-rc.8](https://img.shields.io/badge/DSH-0.1.0--rc.8-3b82f6)](https://github.com/deepseek-ai/deepseek-harness)
-[![tests: 27/27](https://img.shields.io/badge/tests-27%2F27-success)]
-[![dsh-plugin](https://img.shields.io/badge/dsh--plugin-✔-black?logo=github)](https://github.com/topics/dsh-plugin)
+[![DSH 0.1.x](https://img.shields.io/badge/DSH-0.1.x-3b82f6)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh-plugin](https://img.shields.io/badge/dsh--plugin-%E2%9C%94-black?logo=github)](https://github.com/topics/dsh-plugin)
 
 [English](README.md) · **中文**
 
@@ -16,14 +16,17 @@
 
 ## ✨ 为什么选择 DSH Vision Analysis？
 
-你的纯文本 Agent 终于能"看见"了——不用换模型、不让图片字节泄漏进会话、不绑定任何单一厂商。
+你的纯文本 Agent 终于能"看见"了——而且**内置免费视觉源**：装上插件、贴张图、直接提问。无需 API key、不用换模型、不用保存文件。
 
+- **🆓 内置免费视觉源** —— 默认指向 OVHcloud AI Endpoints 匿名通道（Qwen2.5-VL-72B）。零成本、零密钥、零配置。
+- **🖼️ 纯文本模型图片桥接** —— 对话中直接粘贴/发送图片，插件自动路由给视觉模型（原生多模态路由不受影响）。
+- **🔁 限流自动切换** —— 某个视觉模型被限流时按序换下一个；全部用尽时给出清晰的恢复指引而不是报错。
+- **🧾 结构化输出** —— `chart-data` 与 `ocr` 直接返回机器可读 JSON（`rows`、`lines`…），Agent 可程序化消费。
 - **开箱即用的 8 种分析模式** —— `describe`、`ocr`、`ui-review`、`chart-data`、`object-detect`、`compare`、`code-gen`、`debug`，每种都带调优过的指令模板与输出参数。
 - **任意视觉端点** —— 支持 OpenAI `chat/completions` **与** Anthropic `messages` 两种线协议：MiMo、Step、硅基流动、OpenRouter、Gemini（OpenAI 兼容）、GPT-4o、Claude、Qwen-VL，或本地 Ollama / LM Studio / vLLM。
 - **任意输入** —— 本地绝对路径、`http(s)` URL 或 base64 `data:` URL；单次最多 4 张图，内置多图对比。
 - **隐私优先设计** —— 图片字节**永不进入会话日志**、**永不到达主模型**；只有视觉模型的文本答案回到对话。`debug` 报告对 API key **完全掩码**（连前缀都不显示）。
-- **配置实时生效** —— 在 `设置 → 插件配置` 中在线修改端点、模型与按模式的输出参数，密钥自动掩码。
-- **Web UI 粘贴引导** —— 当前模型不支持图片时，输入框会给出可靠路径提示：保存到本地 → 发送路径 → `analyze_image` 解析（支持原生图片的模型不受影响）。
+- **生产级工程** —— 结果缓存、指数退避重试、`设置 → 插件配置` 在线改配置。
 - **依赖精简** —— 运行时仅依赖 `@deepseek-ai/schemastery` 与 `@deepseek-ai/dsh-settings`。
 
 ---
@@ -54,7 +57,20 @@ dsh plugin --profile web add ./dsh-vision-analysis-0.1.0-rc.8.tgz
 
 > "用 analyze_image 把 `/tmp/screenshot.png` 里的文字全部转写出来。"
 
-就这么简单——Agent 调用 `analyze_image`，视觉模型读取文件，文本答案直接落进你的对话。
+就这么简单——**零配置**：插件默认指向 OVHcloud 免费视觉通道，匿名即可调用，并会自动为纯文本模型桥接图片。
+
+<details>
+<summary>使用自己的端点（可选）</summary>
+
+```yaml
+config:
+  apiFormat: openai          # 或 anthropic
+  baseURL: https://api.siliconflow.cn/v1
+  apiKey: your-key           # 匿名/本地端点可留空
+  model: Qwen/Qwen2.5-VL-72B-Instruct
+  bridgeModels: [你的纯文本模型]   # 其图片将经由本插件处理
+```
+</details>
 
 ---
 

@@ -87,6 +87,15 @@
         font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
         font-size="54" font-weight="700" fill="#4d6bfe" letter-spacing="0.5">DSH Vision Analysis</text>
 
+  <!-- FREE badge (attached to the title) -->
+  <g>
+    <rect x="962" y="178" width="104" height="38" rx="19" fill="#10b981"/>
+    <rect x="962" y="178" width="104" height="38" rx="19" fill="none" stroke="#059669" stroke-opacity="0.55"/>
+    <text x="1014" y="204" text-anchor="middle"
+          font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+          font-size="19" font-weight="700" fill="#ffffff" letter-spacing="1.5">FREE</text>
+  </g>
+
   <!-- subtitle -->
   <text x="640" y="248" text-anchor="middle"
         font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
@@ -132,5 +141,5 @@
   <!-- footer line -->
   <text x="640" y="346" text-anchor="middle"
         font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-        font-size="15" fill="#8aa0c4">Any OpenAI / Anthropic-compatible endpoint&#160;&#160;·&#160;&#160;local path&#160;&#160;·&#160;&#160;URL&#160;&#160;·&#160;&#160;data URL&#160;&#160;·&#160;&#160;privacy-first</text>
+        font-size="15" fill="#8aa0c4"><tspan fill="#059669" font-weight="700">FREE vision source built-in</tspan><tspan>&#160;&#160;·&#160;&#160;Any OpenAI / Anthropic-compatible endpoint&#160;&#160;·&#160;&#160;local path&#160;&#160;·&#160;&#160;URL&#160;&#160;·&#160;&#160;privacy-first</tspan></text>
 </svg>

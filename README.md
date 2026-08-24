@@ -3,10 +3,10 @@
 <img src="assets/banner.svg" alt="DSH Vision Analysis — image understanding for the DeepSeek Harness" width="100%">
 
 [![npm version](https://img.shields.io/npm/v/dsh-vision-analysis?label=npm&color=blue)](https://www.npmjs.com/package/dsh-vision-analysis)
+[![vision source: FREE](https://img.shields.io/badge/vision%20source-FREE-10b981)](#️-demo)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![DSH 0.1.0-rc.8](https://img.shields.io/badge/DSH-0.1.0--rc.8-3b82f6)](https://github.com/deepseek-ai/deepseek-harness)
-[![tests: 27/27](https://img.shields.io/badge/tests-27%2F27-success)]
-[![dsh-plugin](https://img.shields.io/badge/dsh--plugin-✔-black?logo=github)](https://github.com/topics/dsh-plugin)
+[![DSH 0.1.x](https://img.shields.io/badge/DSH-0.1.x-3b82f6)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh-plugin](https://img.shields.io/badge/dsh--plugin-%E2%9C%94-black?logo=github)](https://github.com/topics/dsh-plugin)
 
 **English** · [中文](README.zh.md)
 
@@ -18,14 +18,17 @@
 
 ## ✨ Why DSH Vision Analysis?
 
-Your text-only agent can finally "see" — without swapping your model, without leaking image bytes into the conversation, and without depending on a single vendor.
+Your text-only agent can finally "see" — **with a free vision source built in**: install the plugin, paste an image, ask. No API key, no model swap, no local-file dance.
 
+- **🆓 Built-in FREE vision source** — ships pointed at OVHcloud AI Endpoints' anonymous tier (Qwen2.5-VL-72B). Zero cost, zero key, zero config.
+- **🖼️ Image bridge for text-only models** — paste or send images directly in conversation; the plugin routes them to vision automatically (native multimodal routes stay untouched).
+- **🔁 Rate-limit failover** — when one vision model is throttled, the next in the chain answers; if everything is exhausted you get clear recovery guidance instead of a failure.
+- **🧾 Structured output** — `chart-data` and `ocr` return machine-readable JSON (`rows`, `lines`, …) your agent can consume directly.
 - **8 analysis modes out of the box** — `describe`, `ocr`, `ui-review`, `chart-data`, `object-detect`, `compare`, `code-gen`, `debug` — each with a tuned instruction template.
 - **Any vision endpoint** — OpenAI `chat/completions` **or** Anthropic `messages` wire formats. MiMo, Step, SiliconFlow, OpenRouter, Gemini (OpenAI-compat), GPT-4o, Claude, Qwen-VL, or a local Ollama / LM Studio / vLLM.
 - **Any input** — absolute local path, `http(s)` URL, or base64 `data:` URL; up to 4 images per call with built-in comparison.
 - **Privacy-first by design** — image bytes never enter the session log or reach your main model; only the vision model's text comes back. The `debug` report never reveals your API key (fully masked).
-- **Live configuration** — edit endpoint, model, and per-mode tuning from `Settings → 插件配置` with secrets masked.
-- **Web UI guidance** — when your active model can't take images, a composer hint tells you the reliable path: save locally → send the path → `analyze_image` parses it (native image routes stay untouched).
+- **Production-grade plumbing** — result caching, retry with exponential backoff, live configuration from `Settings → 插件配置`.
 - **Dependency-light** — just `@deepseek-ai/schemastery` + `@deepseek-ai/dsh-settings` at runtime.
 
 ---
@@ -56,7 +59,20 @@ Then restart the web profile and ask your agent:
 
 > *"Use analyze_image to OCR `/tmp/screenshot.png` and tell me what it says."*
 
-That's it — the agent calls `analyze_image`, the vision model reads the file, and the text answer lands in your conversation.
+That's it — **zero configuration needed**: the plugin ships pointed at the OVHcloud free vision tier, works anonymously, and bridges images for text-only models automatically.
+
+<details>
+<summary>Bring your own endpoint (optional)</summary>
+
+```yaml
+config:
+  apiFormat: openai          # or anthropic
+  baseURL: https://api.siliconflow.cn/v1
+  apiKey: your-key           # leave empty for anonymous/local endpoints
+  model: Qwen/Qwen2.5-VL-72B-Instruct
+  bridgeModels: [your-text-only-model]   # route their images through the plugin
+```
+</details>
 
 ---
 
