@@ -3,18 +3,29 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.1.2-alpha.5] - 2026-08-28
+
+Version aligned with the DeepSeek Harness `dsh-v0.1.2-alpha.5` prerelease line.
+Compatibility with that prerelease is under verification; the peer-version
+range may still need a `0.1.2` prerelease branch before installing against it.
 
 ### Added
 - Built-in default vision source: OVHcloud AI Endpoints free anonymous tier (Qwen2.5-VL-72B-Instruct), zero-config on first install.
 - `fallbackModels`: rate-limit failover across same-endpoint models (HTTP 429 rotates to the next model; non-429 errors never rotate).
 - `VisionRateLimitError` with user-facing recovery guidance when every model is limited; the image bridge surfaces it in conversation.
 - Tool output reports the model that actually answered.
+- In-repo `screenshots.json` declaration per the awesome-dsh-plugin convention.
 - `bugs.url` and `author` metadata in `package.json`.
 
 ### Changed
 - README (en/zh): two clearly separated usage modes (`analyze_image` tool vs. image bridge setup), real OCR/chart/UI demo outputs, unified version references, fixed issue links.
 - Repository topics widened for discoverability.
+
+### Known limitations
+- The image bridge requires per-deployment setup (`bridgeModels` plus an
+  `image` declaration in the model's `inputModalities`) and is not zero-config.
+- Failover fallback model ids are endpoint-specific and must be adjusted when
+  pointing away from the default provider.
 
 ## [0.1.1-rc.2] — 2026-08-22
 
