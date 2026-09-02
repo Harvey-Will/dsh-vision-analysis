@@ -13,7 +13,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: loads the dsh-settings Context augmentation (ctx.settings) for installSection.
+import type {} from '@deepseek-ai/dsh-settings'
 import { Config, resolveApiKey, resolveConfig, visionModelChain } from './config.js'
 import type { ApiFormat } from './config.js'
 import { ImageSourceError, loadImage } from './media.js'
@@ -24,12 +25,13 @@ import { installImageBridge } from './bridge.js'
 import type { BridgeServices } from './bridge.js'
 import { bridgeChangeNotice } from './model-registry.js'
 import { callVision, callVisionWithFailover, VisionCache } from './vision-client.js'
+import { installSettingsSectionCompat } from './settings-compat.js'
 
 /** The plugin's Cordis identity. */
 export const name = 'vision-analysis'
 
 /** Hard dependencies; `apply` runs only once they are ready. */
-export const inject = ['tools', 'llm', 'attachments']
+export const inject = ['tools', 'llm', 'attachments', 'settings']
 
 /** The settings namespace under which the plugin's configuration is edited. */
 export const SETTINGS_NAMESPACE = 'vision-analysis'
@@ -155,7 +157,7 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
   }
   notifyBridgeLifecycle()
 
-  installSettingsSection(ctx, settingsNamespace(SETTINGS_NAMESPACE), Config, config, {
+  installSettingsSectionCompat(ctx, SETTINGS_NAMESPACE, Config, config, {
     setSource: (source) => {
       current = source
     },

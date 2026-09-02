@@ -23,7 +23,8 @@
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
-    "LICENSE"
+    "LICENSE",
+    "screenshots.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -57,12 +58,12 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6 || >=0.1.1-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6 || >=0.1.1-rc.1 || >=0.1.2-alpha.1",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || >=0.1.1-rc.1"
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || >=0.1.1-rc.1 || >=0.1.2-alpha.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -87,18 +88,18 @@
     "react": "^18.3.1",
     "tsdown": "^0.22.2",
     "typescript": "~5.7.2",
-    "@deepseek-ai/dsh-brand": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-invariants": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-code-runtime": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-timeout": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-commands": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm-retry": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-api-remotes": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-title": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-typert-protocol": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-typert-registry": "0.1.1-rc.2"
+    "@deepseek-ai/dsh-brand": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-code-runtime": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-user-approval": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-timeout": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-commands": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-llm-retry": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-api-remotes": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-session-title": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-typert-registry": "0.1.2-alpha.5"
   },
   "license": "MIT",
   "engines": {

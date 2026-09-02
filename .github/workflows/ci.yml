@@ -11,19 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: npx tsc -p tsconfig.json --pretty false
+        run: pnpm run typecheck
 
       - name: Build server
-        run: npx tsc -p tsconfig.json
+        run: pnpm run build
 
       - name: Build client bundle
-        run: npx tsdown --env.DSH_BUILD_FACE client
+        run: pnpm run build:client
