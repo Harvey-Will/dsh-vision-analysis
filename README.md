@@ -36,7 +36,17 @@ Your text-only agent can finally "see" — **with a free vision source built in*
 
 ## 🖼️ Demo
 
-Three everyday scenarios. The outputs below are real — each was answered by a different free vision model automatically (when one is rate limited, the plugin fails over to the next).
+Paste an image, ask a question, get a real answer — even on a text-only model. The image is routed to your configured vision endpoint and the analysis lands straight in the conversation:
+
+<p align="center">
+  <img src="assets/demo.png" alt="dsh-vision-analysis in action: a pasted image of a DeepSeek fan-art character is identified with full reasoning in a DSH conversation" width="640">
+</p>
+
+<sub>In the screenshot: a pasted image plus the question "这是谁?" — the vision endpoint identifies the DeepSeek fan-art character and walks through its reasoning, all without switching models or saving files locally.</sub>
+
+### More scenarios — real outputs from the free vision models
+
+Three everyday capabilities, each answered by a different free vision model automatically (when one is rate limited, the plugin fails over to the next).
 
 **1. OCR — pull text out of documents and screenshots**
 
