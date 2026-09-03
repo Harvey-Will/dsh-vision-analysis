@@ -100,33 +100,74 @@ function parseYamlSection(lines: string[], _baseIndent: number): unknown {
 
   // Determine the structure: if first non-blank line starts with '-', it's a list
   const first = body[0]!
-  if (first.trimStart().startsWith('- ')) return parseYamlList(body)
-  return parseYamlMapping(body, 0)
+  const firstTrimmed = first.trimStart()
+  if (firstTrimmed.startsWith('- ')) {
+    // For lists, pass the ORIGINAL lines (preserving relative indentation)
+    // so parseYamlList can distinguish same-level vs deeper '- ' lines.
+    return parseYamlList(body)
+  }
+
+  // For mappings, strip common indent so keys align to indent 0
+  const minIndent = Math.min(...body.map((l) => l.length - l.trimStart().length))
+  const stripped = body.map((l) => (l.trim() === '' ? '' : l.slice(minIndent)))
+  return parseYamlMapping(stripped, 0)
 }
 
 function parseYamlList(lines: string[]): unknown[] {
   const items: unknown[] = []
   let currentItemLines: string[] = []
-  let itemBaseIndent = 0
+  let listIndent = -1 // indent of the first '- ' line, set on first item
 
   const flushItem = () => {
     if (currentItemLines.length > 0) {
       // The first line starts with "- key: value" — strip the "- " prefix
+      // and align the first key's indent with the rest of the item body.
       const first = currentItemLines[0]!
       const dashIdx = first.indexOf('- ')
       const rest = dashIdx >= 0 ? first.slice(dashIdx + 2) : first
-      const bodyLines = [rest, ...currentItemLines.slice(1)]
-      items.push(parseYamlMapping(bodyLines, itemBaseIndent))
+      // The item's key indent = list indent + 2 (YAML increment after '- ')
+      const itemKeyIndent = listIndent + 2
+      const aligned = ' '.repeat(itemKeyIndent) + rest.trimStart()
+      const bodyLines = [aligned, ...currentItemLines.slice(1)]
+      // Strip common indent from body lines (relative to the item's key indent)
+      const contentLines = bodyLines.filter((l) => l.trim() !== '')
+      if (contentLines.length > 0) {
+        const minIndent = Math.min(...contentLines.map((l) => l.length - l.trimStart().length))
+        const stripped = bodyLines.map((l) => (l.trim() === '' ? '' : l.slice(minIndent)))
+        // If the first line is a bare scalar (no colon), it's a scalar list item
+        const firstTrimmed = stripped[0]!.trim()
+        if (!firstTrimmed.includes(':') || firstTrimmed.startsWith('- ')) {
+          items.push(parseYamlScalar(firstTrimmed))
+        } else {
+          items.push(parseYamlMapping(stripped, 0))
+        }
+      } else {
+        items.push({})
+      }
     }
     currentItemLines = []
   }
 
   for (const line of lines) {
     const trimmed = line.trimStart()
+    const indent = line.length - trimmed.length
     if (trimmed.startsWith('- ')) {
-      flushItem()
-      itemBaseIndent = line.length - trimmed.length
-      currentItemLines.push(line)
+      // Only treat as a new list item if at the same indent as the list base.
+      // Deeper '- ' lines are children of the current item (e.g., block sequence
+      // values of a mapping key inside the current list item).
+      if (currentItemLines.length === 0) {
+        // First item — set the list base indent
+        listIndent = indent
+        flushItem()
+        currentItemLines.push(line)
+      } else if (indent === listIndent) {
+        // Same indent — new list item
+        flushItem()
+        currentItemLines.push(line)
+      } else {
+        // Deeper indent — child of current item (block sequence value)
+        currentItemLines.push(line)
+      }
     } else {
       currentItemLines.push(line)
     }
@@ -139,11 +180,19 @@ function parseYamlMapping(lines: string[], baseIndent: number): Record<string, u
   const result: Record<string, unknown> = {}
   let currentKey: string | null = null
   let currentChildLines: string[] = []
+  let keyIndent = baseIndent
 
   const flush = () => {
     if (currentKey !== null) {
       if (currentChildLines.length > 0) {
-        result[currentKey] = parseYamlSection(currentChildLines, baseIndent + 2)
+        // Detect the child indent from the first child line
+        const childIndent = currentChildLines[0]!.length - currentChildLines[0]!.trimStart().length
+        // Strip the common leading whitespace so children are relative to indent 0
+        const stripped = currentChildLines.map((l) => {
+          if (l.trim() === '') return ''
+          return l.slice(childIndent)
+        })
+        result[currentKey] = parseYamlSection(stripped, 0)
       }
       currentChildLines = []
     }
@@ -158,17 +207,26 @@ function parseYamlMapping(lines: string[], baseIndent: number): Record<string, u
     const indent = line.length - line.trimStart().length
     const trimmed = line.trimStart()
 
-    // Check if this is a key-value line at the current level
+    // A key at the SAME indent as baseIndent is a sibling at this level.
+    // A key at a DEEPER indent is a child of the current key.
+    // A key at a SHALLOWER indent belongs to a parent — stop processing.
     const keyMatch = trimmed.match(/^([\w@./_-]+):\s*(.*)/)
-    if (keyMatch && indent >= baseIndent) {
+
+    if (indent === baseIndent && keyMatch) {
+      // Sibling key at this level — flush previous and start new key
       flush()
       currentKey = keyMatch[1]!
+      keyIndent = indent
       const value = keyMatch[2]!.trim()
       if (value !== '') {
         result[currentKey] = parseYamlScalar(value)
-        currentKey = null // scalar value on same line, no children
+        currentKey = null
       }
+    } else if (indent < baseIndent) {
+      // Shallow indent — belongs to parent, stop
+      break
     } else if (currentKey !== null) {
+      // Deeper indent or non-key line — child of current key
       currentChildLines.push(line)
     }
   }
@@ -180,7 +238,8 @@ function parseYamlScalar(value: string): unknown {
   if (value === 'true') return true
   if (value === 'false') return false
   if (value === 'null' || value === '~' || value === '') return null
-  // Flow sequence: [a, b, c]
+  // Flow sequence: [a, b, c] or []
+  if (value === '[]') return []
   const flowSeq = value.match(/^\[(.+)\]$/)
   if (flowSeq) {
     return flowSeq[1]!.split(',').map((s) => parseYamlScalar(s.trim()))
@@ -366,7 +425,8 @@ export async function ensureBridgeModalities(
     await atomicWrite(settingsPath, serializeYaml(settings))
     log(`modalities-sync: declared image input for bridge models: ${modified.join(', ')}`)
   }
-  return modified
+  // Deduplicate: a model may appear in multiple providers
+  return [...new Set(modified)]
 }
 
 /**
@@ -407,7 +467,7 @@ export async function revertBridgeModalities(
     await atomicWrite(settingsPath, serializeYaml(settings))
     log(`modalities-sync: reverted image input for: ${reverted.join(', ')}`)
   }
-  return reverted
+  return [...new Set(reverted)]
 }
 
 /**
@@ -457,7 +517,7 @@ export async function revertAllBridgeModalities(
     await atomicWrite(settingsPath, serializeYaml(settings))
     log(`modalities-sync: reverted all bridge modalities: ${reverted.join(', ')}`)
   }
-  return reverted
+  return [...new Set(reverted)]
 }
 
 // ---------------------------------------------------------------------------
