@@ -17,6 +17,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 // Type-only: loads the dsh-settings Context augmentation (ctx.settings) for installSection.
 import type {} from '@deepseek-ai/dsh-settings'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { Config, resolveApiKey, resolveConfig, visionModelChain } from './config.js'
 import type { ApiFormat } from './config.js'
 import { ImageSourceError, loadImage } from './media.js'
@@ -28,6 +30,11 @@ import type { BridgeServices } from './bridge.js'
 import { bridgeChangeNotice } from './model-registry.js'
 import { callVision, callVisionWithFailover, VisionCache } from './vision-client.js'
 import { installSettingsSectionCompat } from './settings-compat.js'
+import {
+  ensureBridgeModalities,
+  revertBridgeModalities,
+  revertAllBridgeModalities,
+} from './modalities-sync.js'
 
 /** The plugin's Cordis identity. */
 export const name = 'vision-analysis'
@@ -148,23 +155,54 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
   }
   ctx.effect(() => installImageBridge(ctx, bridgeServices, current), 'uva: image bridge')
 
-  // Bridge list lifecycle: inform on first setup and on every removal, and
-  // keep the "originally text-only, routed through the plugin" marker in sync.
+  // Bridge list lifecycle: auto-configure inputModalities for bridged models
+  // so DSH admits image prompts, and revert on removal / plugin deactivation.
+  const settingsPath = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'settings.yaml')
   let previousBridgeModels: readonly string[] = []
-  const notifyBridgeLifecycle = (): void => {
-    const active = current()
-    const notice = bridgeChangeNotice(active, previousBridgeModels)
-    previousBridgeModels = active.bridgeModels ?? []
-    if (notice !== undefined) logger.warn(`[image bridge] ${notice.replaceAll('\n', ' ')}`)
+
+  // Boot-time sync: ensure every bridgeModel has `image` declared.
+  const bootModels = config.bridgeModels ?? []
+  if (bootModels.length > 0) {
+    ensureBridgeModalities(settingsPath, bootModels, (msg) => logger.warn(`[modalities-sync] ${msg}`))
+      .catch((err: unknown) => logger.error('[modalities-sync] boot sync failed:', err))
   }
-  notifyBridgeLifecycle()
+  previousBridgeModels = bootModels
+
+  // Config-change sync: add image for newly listed models, revert for removed ones.
+  const syncBridgeLifecycle = (): void => {
+    const active = current()
+    const currentModels = active.bridgeModels ?? []
+    const notice = bridgeChangeNotice(active, previousBridgeModels)
+    const added = currentModels.filter((m) => !previousBridgeModels.includes(m))
+    const removed = previousBridgeModels.filter((m) => !currentModels.includes(m))
+    previousBridgeModels = currentModels
+
+    if (notice !== undefined) logger.warn(`[image bridge] ${notice.replaceAll('\n', ' ')}`)
+    if (added.length > 0) {
+      ensureBridgeModalities(settingsPath, added, (msg) => logger.warn(`[modalities-sync] ${msg}`))
+        .catch((err: unknown) => logger.error('[modalities-sync] add failed:', err))
+    }
+    if (removed.length > 0) {
+      revertBridgeModalities(settingsPath, removed, (msg) => logger.warn(`[modalities-sync] ${msg}`))
+        .catch((err: unknown) => logger.error('[modalities-sync] revert failed:', err))
+    }
+  }
+
+  // On plugin deactivation: revert ALL bridge modalities.
+  ctx.effect(() => () => {
+    const models = current().bridgeModels ?? []
+    if (models.length > 0) {
+      revertAllBridgeModalities(settingsPath, (msg) => logger.warn(`[modalities-sync] ${msg}`))
+        .catch((err: unknown) => logger.error('[modalities-sync] deactivation revert failed:', err))
+    }
+  }, 'uva: bridge modalities cleanup')
 
   installSettingsSectionCompat(ctx, SETTINGS_NAMESPACE, Config, config, {
     setSource: (source) => {
       current = source
     },
     onChange: () => {
-      notifyBridgeLifecycle()
+      syncBridgeLifecycle()
     },
     validate: (value) => {
       resolveConfig(value)
