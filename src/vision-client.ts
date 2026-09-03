@@ -5,8 +5,8 @@
  * @module dsh-vision-analysis/vision-client
  */
 
-import type { Config, } from './config.js'
-import { resolveApiKey } from './config.js'
+import type { Config, EndpointGroup } from './config.js'
+import { resolveApiKey, resolveEndpoint, visionModelChain, ConfigError } from './config.js'
 import type { LoadedImage } from './media.js'
 import type { VisionMode } from './modes.js'
 
@@ -359,6 +359,133 @@ export async function callVisionWithFailover(
   throw new VisionRateLimitError(
     `All vision models are rate limited (${tried.join(' → ')}). ${RATE_LIMIT_GUIDANCE}`,
     tried,
+  )
+}
+
+/** One recorded failure from the endpoint-group chain (F1). */
+export interface VisionAttempt {
+  /** Zero-based index of the group in the chain. */
+  groupIndex: number
+  /** The group's composed endpoint URL. */
+  baseURL: string
+  /** The model that was attempted. */
+  model: string
+  /** Human-readable failure reason. */
+  error: string
+  /** HTTP status, when the failure was an API error. */
+  httpStatus?: number
+}
+
+/**
+ * Thrown when every endpoint group in the chain failed with at least one
+ * non-rate-limit error (F1). `attempts` carries the full per-group report —
+ * which group, which model, what error — for user-facing guidance.
+ * (Pure rate-limit exhaustion across the whole chain throws
+ * {@link VisionRateLimitError} instead, preserving the existing UX.)
+ */
+export class VisionChainError extends Error {
+  /** Every recorded attempt, in order. */
+  readonly attempts: readonly VisionAttempt[]
+
+  constructor(message: string, attempts: readonly VisionAttempt[]) {
+    super(message)
+    this.name = 'VisionChainError'
+    this.attempts = attempts
+  }
+}
+
+/**
+ * Run one vision request across the full endpoint-group chain (F1): for each
+ * group in order, the group's model chain (primary + its own fallbackModels)
+ * runs via {@link callVisionWithFailover}; when the group is unavailable
+ * (every model rate limited, endpoint 404/auth/subscription errors, network
+ * failures), the next group takes over. Model ids never cross groups — each
+ * group's fallbackModels only run under that group's own baseURL.
+ *
+ * Terminal errors:
+ *  - every recorded attempt was HTTP 429 → {@link VisionRateLimitError}
+ *    (all tried models, existing guidance — backward compatible);
+ *  - any other failure → {@link VisionChainError} carrying the per-group
+ *    report (`组N [model @ baseURL]: error` per line in the message).
+ * @param config - resolved configuration (supplies timeoutMs, retryCount,
+ *   retryBackoffMs — the global knobs shared by every group).
+ * @param groups - ordered endpoint groups (see `resolveEndpointGroups`).
+ * @returns the validated result, the model that answered, and that group's
+ *   baseURL.
+ * @throws ConfigError when `groups` is empty.
+ */
+export async function callVisionAcrossGroups(
+  config: Config,
+  groups: readonly EndpointGroup[],
+  prompt: string,
+  images: readonly LoadedImage[],
+  tuning: CallTuning,
+  signal: AbortSignal,
+  fetchImpl: FetchLike = fetch,
+  opts: { responseFormat?: 'json_object' } = {},
+): Promise<{ result: VisionResult; model: string; baseURL: string }> {
+  if (groups.length === 0) {
+    throw new ConfigError('no vision endpoint groups configured (set baseURL/model or the endpoints list)')
+  }
+  const attempts: VisionAttempt[] = []
+  let lastError: unknown
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    const group = groups[groupIndex]!
+    // The group overrides the endpoint identity fields; global knobs
+    // (timeoutMs, retries) stay shared from the top-level config.
+    const groupConfig: Config = {
+      ...config,
+      apiFormat: group.apiFormat,
+      baseURL: group.baseURL,
+      apiKey: group.apiKey,
+      model: group.model,
+      fallbackModels: group.fallbackModels,
+    }
+    const endpoint = resolveEndpoint(groupConfig)
+    try {
+      const { result, model } = await callVisionWithFailover(
+        groupConfig, endpoint, prompt, images, tuning, signal,
+        visionModelChain(groupConfig), config.retryCount, config.retryBackoffMs,
+        fetchImpl, opts,
+      )
+      return { result, model, baseURL: group.baseURL }
+    } catch (error) {
+      lastError = error
+      if (signal.aborted) throw error
+      if (error instanceof VisionRateLimitError) {
+        for (const model of error.triedModels) {
+          attempts.push({ groupIndex, baseURL: group.baseURL, model, error: 'HTTP 429 (rate limited)', httpStatus: 429 })
+        }
+        continue
+      }
+      if (error instanceof VisionApiError) {
+        attempts.push({ groupIndex, baseURL: group.baseURL, model: group.model, error: error.message, httpStatus: error.httpStatus })
+        continue
+      }
+      attempts.push({
+        groupIndex, baseURL: group.baseURL, model: group.model,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  // Single group: preserve the exact pre-F1 error semantics — whatever
+  // callVisionWithFailover threw propagates unchanged (VisionRateLimitError
+  // for all-429, the raw VisionApiError for anything else).
+  if (groups.length === 1) throw lastError
+  const allRateLimited = attempts.length > 0 && attempts.every((attempt) => attempt.httpStatus === 429)
+  if (allRateLimited) {
+    throw new VisionRateLimitError(
+      `All vision models are rate limited (${attempts.map((attempt) => attempt.model).join(' → ')}). ${RATE_LIMIT_GUIDANCE}`,
+      attempts.map((attempt) => attempt.model),
+    )
+  }
+  const report = attempts
+    .map((attempt) => `组${attempt.groupIndex + 1} [${attempt.model} @ ${attempt.baseURL}]: ${attempt.error}`)
+    .join('\n')
+  throw new VisionChainError(
+    `所有视觉端点组均失败（${attempts.length} 次尝试）:\n${report}\n` +
+    'All vision endpoint groups failed — check the per-group errors above, or update the endpoints list in Settings.',
+    attempts,
   )
 }
 

@@ -19,7 +19,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-settings'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { Config, resolveApiKey, resolveConfig, visionModelChain } from './config.js'
+import { Config, resolveApiKey, resolveConfig, visionModelChain, resolveEndpointGroups } from './config.js'
 import type { ApiFormat } from './config.js'
 import { ImageSourceError, loadImage } from './media.js'
 import { composePrompt, resolveTuning, VISION_MODES } from './modes.js'
@@ -28,7 +28,7 @@ import { appendStructured, extractJsonObject, isStructuredMode, isValidShape } f
 import { installImageBridge } from './bridge.js'
 import type { BridgeServices } from './bridge.js'
 import { bridgeChangeNotice } from './model-registry.js'
-import { callVision, callVisionWithFailover, VisionCache } from './vision-client.js'
+import { callVision, callVisionAcrossGroups, VisionCache } from './vision-client.js'
 import { installSettingsSectionCompat } from './settings-compat.js'
 import {
   ensureBridgeModalities,
@@ -153,7 +153,7 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
     llm: ctx.llm,
     attachments: ctx.attachments,
   }
-  ctx.effect(() => installImageBridge(ctx, bridgeServices, current), 'uva: image bridge')
+  ctx.effect(() => installImageBridge(ctx, bridgeServices, current, (msg) => logger.warn(msg)), 'uva: image bridge')
 
   // Bridge list lifecycle: auto-configure inputModalities for bridged models
   // so DSH admits image prompts, and revert on removal / plugin deactivation.
@@ -255,7 +255,7 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       const active = current()
-      const endpoint = resolveConfig(active)
+      const groups = resolveEndpointGroups(active)
       const mode = args.mode ?? active.defaultMode
       const sources = args.images !== undefined && args.images.length > 0
         ? args.images
@@ -287,27 +287,31 @@ export function apply(ctx: Context, config: Config = {} as Config): void {
       // Caching is skipped for `debug` (it must always hit the network) and
       // when the TTL is 0. On a hit the prior successful answer is returned
       // without issuing a second request. The cache key includes the full
-      // prompt, so structured and plain variants never collide.
+      // prompt, so structured and plain variants never collide. The endpoint
+      // dimension of the key is the full group-chain identity (F1): a chain
+      // that answered via group 2 is never served to a request whose chain
+      // now starts with a different group.
+      const chainKey = groups.map((group) => `${group.baseURL}|${group.model}`).join('>>')
       const useCache = mode !== 'debug' && active.cacheTtlMs > 0
       if (useCache) {
         if (cache === undefined || cache.ttlMs !== active.cacheTtlMs || cache.maxEntries !== active.cacheMaxEntries) {
           cache = new VisionCache(active.cacheTtlMs, active.cacheMaxEntries)
         }
-        const hit = cache.get(endpoint, prompt, images)
+        const hit = cache.get(chainKey, prompt, images)
         if (hit !== undefined) {
           return finishOutput(active, mode, images.length, hit, structured)
         }
       }
 
       if (mode === 'debug') {
+        const endpoint = resolveConfig(active)
         return runDebug(active, endpoint, mode, images, prompt, tuning, exec.signal, active.retryCount, active.retryBackoffMs)
       }
-      const { result, model } = await callVisionWithFailover(
-        active, endpoint, prompt, images, tuning, exec.signal,
-        visionModelChain(active), active.retryCount, active.retryBackoffMs, fetch, callOpts,
+      const { result, model } = await callVisionAcrossGroups(
+        active, groups, prompt, images, tuning, exec.signal, fetch, callOpts,
       )
       if (useCache) {
-        cache!.set(endpoint, prompt, images, result)
+        cache!.set(chainKey, prompt, images, result)
       }
       return finishOutput(active, mode, images.length, result, structured, model)
     },

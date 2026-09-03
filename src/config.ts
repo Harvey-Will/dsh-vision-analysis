@@ -64,6 +64,29 @@ export interface Config {
   retryCount: number
   /** Base backoff in ms for the first retry; doubles per subsequent attempt. */
   retryBackoffMs: number
+  /**
+   * Additional vision endpoint groups in priority order (F1 multi-source
+   * failover). When every model of the primary group fails (rate limits,
+   * auth errors, endpoint 404/subscription errors, network failures), the
+   * next group is tried in array order. Each group carries its own
+   * baseURL + apiKey + model + fallbackModels — model ids are NEVER shared
+   * across groups (a model id is only valid under its own endpoint).
+   */
+  endpoints: EndpointGroup[]
+}
+
+/** One vision endpoint group: an independently-configured provider. */
+export interface EndpointGroup {
+  /** Wire format of this group's endpoint. */
+  apiFormat: ApiFormat
+  /** Base URL of this group's vision endpoint. */
+  baseURL: string
+  /** API key for this group (empty = anonymous / `UNIVERSAL_VISION_API_KEY` env). */
+  apiKey: string
+  /** This group's primary vision model identifier. */
+  model: string
+  /** Same-endpoint rate-limit fallback models for this group. */
+  fallbackModels: string[]
 }
 
 /** Environment variable that supplies the API key when `config.apiKey` is empty. */
@@ -171,6 +194,28 @@ export const Config: Schema<Config> = Schema.object({
     .min(100)
     .default(2000)
     .description('Base backoff in ms for the first retry; doubles per subsequent attempt.'),
+  endpoints: Schema.array(
+    Schema.object({
+      apiFormat: Schema.union(['openai', 'anthropic'])
+        .default('openai')
+        .description('Wire format of this endpoint group.'),
+      baseURL: Schema.string()
+        .default('')
+        .description('Base URL of this endpoint group (entries with an empty baseURL or model are ignored).'),
+      apiKey: Schema.string()
+        .role('secret')
+        .default('')
+        .description('API key for this endpoint group. Empty means anonymous access or the UNIVERSAL_VISION_API_KEY environment variable.'),
+      model: Schema.string()
+        .default('')
+        .description('This group\'s primary vision model identifier.'),
+      fallbackModels: Schema.array(Schema.string())
+        .default([])
+        .description('Same-endpoint rate-limit fallback models for this group (tried on HTTP 429 only). Model ids are never shared across groups.'),
+    }).description('One vision endpoint group (its own baseURL + apiKey + model).'),
+  )
+    .default([])
+    .description('Additional vision endpoint groups in priority order (F1 multi-source failover). When every model of the groups before them fails (rate limits, auth errors, endpoint 404/subscription errors, network failures), the next group is tried. Leave empty to use only the primary endpoint above.'),
 })
 
 /** Error thrown when configuration cannot be used for a call. */
@@ -239,4 +284,43 @@ export function visionModelChain(config: Config): string[] {
   const primary = config.model
   const rest = (config.fallbackModels ?? []).filter((model) => model !== '' && model !== primary)
   return [primary, ...rest]
+}
+
+/**
+ * The ordered endpoint-group chain for one deployment (F1 multi-source
+ * failover). Groups are tried in array order; within a group the model
+ * chain (primary + fallbackModels) runs first.
+ *
+ * Ordering semantics:
+ *  - `endpoints` entries come in their array order;
+ *  - the primary group (baseURL/apiKey/model) is user-configured → it leads
+ *    the chain, with the `endpoints` groups as fallbacks after it;
+ *  - the primary group is still the stock OVHcloud default (user never
+ *    touched it) → it is demoted to LAST, so explicitly configured groups
+ *    take priority and the free tier remains as the final fallback;
+ *  - entries with an empty baseURL or model are ignored (incomplete rows
+ *    in the settings UI must not break the chain);
+ *  - a primary with an empty baseURL/model is dropped entirely.
+ * @param config - the configuration in effect.
+ * @returns endpoint groups in failover order (never contains invalid rows).
+ */
+export function resolveEndpointGroups(config: Config): EndpointGroup[] {
+  const primary: EndpointGroup = {
+    apiFormat: config.apiFormat,
+    baseURL: config.baseURL,
+    apiKey: config.apiKey,
+    model: config.model,
+    fallbackModels: config.fallbackModels ?? [],
+  }
+  const extras = (config.endpoints ?? []).filter(
+    (group) => group.baseURL.trim() !== '' && group.model.trim() !== '',
+  )
+  const primaryValid = primary.baseURL.trim() !== '' && primary.model.trim() !== ''
+  if (!primaryValid) return extras
+  if (extras.length === 0) return [primary]
+  const primaryIsStock =
+    primary.baseURL.trim() === OVHCLOUD_BASE_URL &&
+    primary.model.trim() === OVHCLOUD_DEFAULT_MODEL &&
+    primary.apiKey.trim() === ''
+  return primaryIsStock ? [...extras, primary] : [primary, ...extras]
 }

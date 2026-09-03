@@ -36,9 +36,9 @@ import type { ContentBlock, GenerateOptions, ImageBlock, Message, StreamChunk } 
 import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { Config } from './config.js'
-import { resolveConfig, visionModelChain } from './config.js'
+import { resolveEndpointGroups } from './config.js'
 import { resolveTuning } from './modes.js'
-import { callVisionWithFailover, VisionRateLimitError } from './vision-client.js'
+import { callVisionAcrossGroups, VisionRateLimitError, VisionChainError } from './vision-client.js'
 import type { LoadedImage } from './media.js'
 import { isBridged } from './model-registry.js'
 
@@ -172,27 +172,25 @@ export function* textResponseStream(text: string): Generator<StreamChunk> {
 }
 
 /**
- * Run one vision analysis for a bridge plan across the configured model
- * chain (primary + rate-limit fallbacks) and return the answer text.
+ * Run one vision analysis for a bridge plan across the full endpoint-group
+ * chain (primary group + `endpoints` groups, F1) and return the answer text.
  * @param config - the plugin configuration in effect.
  * @param plan - the decided plan (prompt + loaded images).
  * @param signal - caller cancellation.
  */
 async function runBridgeVision(config: Config, plan: BridgePlan, signal?: AbortSignal): Promise<string> {
-  const endpoint = resolveConfig(config)
   const tuning = resolveTuning(
     'describe',
     { maxTokens: config.maxTokens, temperature: config.temperature },
     config.modes,
   )
-  const { result } = await callVisionWithFailover(
+  const { result } = await callVisionAcrossGroups(
     config,
-    endpoint,
+    resolveEndpointGroups(config),
     plan.prompt,
     plan.images,
     tuning,
     signal ?? new AbortController().signal,
-    visionModelChain(config),
   )
   return result.text
 }
@@ -239,14 +237,21 @@ async function* projectAndRedispatch(
  *    image projected (never raw bytes, never vision cost);
  *  - a conversation turn with images in its newest user message → vision
  *    bridge; on any failure → projected re-dispatch.
+ *
+ * Failure visibility: rate-limit exhaustion yields the user-facing quota
+ * notice; any other chain exhaustion is logged through `log` (F1 per-group
+ * report) before the projected re-dispatch — the conversation keeps flowing,
+ * but the failure is never silent.
  * @param ctx - registrant context (must declare `llm/stream`).
  * @param services - the llm + attachments slices (typically `ctx.llm`/`ctx.attachments`).
  * @param getConfig - resolves the live plugin configuration per call.
+ * @param log - optional sink for chain-failure reports (defaults to no-op).
  */
 export function installImageBridge(
   ctx: Pick<Context, 'on'>,
   services: BridgeServices,
   getConfig: () => Config,
+  log: (msg: string) => void = () => {},
 ): () => void {
   return ctx.on('llm/stream', (options: GenerateOptions, next: () => AsyncIterable<StreamChunk>) => {
     const config = getConfig()
@@ -284,6 +289,15 @@ export function installImageBridge(
           // Every model in the chain is rate limited: tell the user what to
           // do instead of degrading silently.
           yield* textResponseStream(bridgeRateLimitNotice(error))
+          return
+        }
+        if (error instanceof VisionChainError) {
+          // The full endpoint-group chain failed with non-rate-limit errors
+          // (auth, 404, subscription, network …). The conversation keeps
+          // flowing via the projected re-dispatch, but the failure is
+          // reported — never silent (M1).
+          log(`[image bridge] vision chain exhausted:\n${error.message}`)
+          yield* projectAndRedispatch(services, options)
           return
         }
         // Other failures: degrade to DSH's normal placeholder pipeline.

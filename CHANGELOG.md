@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Version aligned with the DeepSeek Harness `0.1.2-rc.1` release (installed via the npm `alpha` → `0.1.2-rc.1` dist-tag).
 
+### Added
+- **Multi-endpoint priority groups (F1)**: `endpoints: [{ baseURL, apiKey, model, fallbackModels? }, …]` — additional vision provider groups tried in priority order when the groups before them fail (rate limits, auth errors, endpoint 404/subscription errors, network failures). Each group carries its own key and model ids (ids never cross groups). The stock OVHcloud free group automatically demotes to last-resort fallback once any own group is configured. Chain exhaustion reports every attempt (`组N [model @ baseURL]: error`); pure rate-limit exhaustion keeps the existing quota notice. Bridge and `analyze_image` both fail over across groups; a single-group deployment behaves exactly as before.
+- Bridge modalities sync hardening: post-write integrity verification with automatic backup rollback, backup retention (5 most recent), and a surgical text editor that never rewrites the whole settings.yaml.
+
 ### Changed
 - Dev dependencies aligned to `0.1.2-rc.1` so typecheck and the client-face build run against the same package set the rc.1 host ships.
 - Peer/dependency ranges verified to accept `0.1.2-rc.1` (`>=0.1.2-alpha.1` branch; SemVer prerelease tuples mean `^0.1.1-rc.2` alone does NOT match it).
