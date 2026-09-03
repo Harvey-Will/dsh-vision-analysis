@@ -1,531 +1,385 @@
 /**
- * Bridge modalities sync: automatically manages each bridged model's
- * `inputModalities` in settings.yaml so DSH admits image prompts.
+ * Bridge modalities sync — SURGICAL text editing of settings.yaml.
  *
- * When a model is added to `bridgeModels`, the plugin:
- *  1. reads the model's current `input` / `inputModalities` from settings.yaml;
- *  2. if `image` is absent, appends it and sets a `_visionBridge: true` marker
- *     so the plugin can distinguish "added by bridge" from "native multimodal";
- *  3. writes the file back (atomic: temp + rename).
+ * LESSON LEARNED (twice now): never rewrite a whole config file through a
+ * parse→serialize round trip.  A partial parser silently drops what it does
+ * not understand (providers, comments, field variants), and the write-back
+ * corrupts the user's configuration.
  *
- * When a model is removed from `bridgeModels` (or the plugin is disabled), the
- * plugin reverts: strips `image` from `input`/`inputModalities` and removes the
- * `_visionBridge` marker — leaving the model exactly as it was before.
+ * This module therefore edits the RAW TEXT only:
+ *  1. locate the target model's entry block (`- id: <modelId>` … until the
+ *     next list item / dedent),
+ *  2. within that block, add or remove the `image` modality line and the
+ *     `_visionBridge: true` marker line,
+ *  3. write the file back with every other byte untouched.
  *
- * The marker `_visionBridge: true` is the contract: any model carrying it is
- * plugin-configured and MUST be reverted on removal.  A model that already had
- * `image` before the plugin touched it (native multimodal) never receives the
- * marker and is never reverted.
+ * A timestamped backup (settings.yaml.bak-uva-<ts>) is written before every
+ * modification, so any regression is user-recoverable.
  * @module dsh-vision-analysis/modalities-sync
  */
 
-import { readFile, writeFile, rename } from 'node:fs/promises'
+import { readFile, writeFile, rename, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
+const VISION_BRIDGE_MARKER = '_visionBridge: true'
+
 // ---------------------------------------------------------------------------
-// YAML subset parser/writer — minimal, zero-dependency, handles the flat
-// mapping structure of settings.yaml (top-level keys → objects/arrays/strings).
+// Text-level entry block location
 // ---------------------------------------------------------------------------
 
-type YamlValue = string | number | boolean | null | YamlValue[] | { [k: string]: YamlValue }
+interface EntryBlock {
+  /** Full text of the entry, from the `- ` line through the last content line. */
+  text: string
+  /** Index (in lines) where the entry starts. */
+  startLine: number
+  /** Index (in lines) one past the entry's last content line. */
+  endLine: number
+  /** Indent (spaces) of the `- ` line. */
+  dashIndent: number
+}
 
-/**
- * Minimal YAML reader for settings.yaml.  Handles:
- *  - top-level `key: value` scalars and `key: [a, b]` flow sequences
- *  - nested `- id: ...` / `  key: value` block mappings under list items
- *  - quoted and unquoted scalars, `true`/`false`/`null`
- *
- * NOT a full YAML parser — sufficient for the DSH settings file structure.
- * Falls back to returning `undefined` on any parse ambiguity so the caller
- * can skip the sync rather than corrupt the file.
- */
-function parseYamlMinimal(text: string): Record<string, unknown> | undefined {
-  // Delegate to structured approach: split into top-level sections by
-  // unindented keys, then parse each section's body.
-  // This is intentionally conservative — if the structure is unexpected,
-  // return undefined so the caller skips.
-  try {
-    const result: Record<string, unknown> = {}
-    let currentKey: string | null = null
-    let currentIndent = 0
-    let currentLines: string[] = []
-
-    const flush = () => {
-      if (currentKey !== null) {
-        result[currentKey] = parseYamlSection(currentLines, currentIndent)
-      }
-      currentLines = []
-    }
-
-    for (const rawLine of text.split('\n')) {
-      const line = rawLine.replace(/\r$/, '')
-      // Skip blank lines and comments at the top level
-      if (line.trim() === '' || line.trim().startsWith('#')) {
-        if (currentKey !== null) currentLines.push(line)
-        continue
-      }
-      const indent = line.search(/\S/)
-      // Top-level key: indent === 0 and looks like `key:`
-      if (indent === 0 && /^[\w@./-]+:/.test(line)) {
-        flush()
-        currentKey = line.match(/^([\w@./-]+):/)![1]!
-        currentIndent = 0
-        // Capture the value on the same line (if any)
-        const afterColon = line.slice(line.indexOf(':') + 1).trim()
-        if (afterColon !== '') {
-          currentLines.push(afterColon)
-        }
-      } else if (currentKey !== null) {
-        currentLines.push(line)
-      }
-    }
-    flush()
-    return result
-  } catch {
-    return undefined
-  }
+/** Indent (space count) of a line; blank lines return -1. */
+function indentOf(line: string): number {
+  if (line.trim() === '') return -1
+  return line.length - line.trimStart().length
 }
 
 /**
- * Parse a YAML section body (everything under a top-level key) into a JS
- * value.  Handles list-of-mappings (the LLM models structure) and plain
- * mappings.
+ * Compute the exclusive end line of the entry block starting at `startLine`
+ * (a `- id:` line with `dashIndent` indent).
  */
-function parseYamlSection(lines: string[], _baseIndent: number): unknown {
-  // Filter out comment-only and blank lines for the body
-  const body = lines.filter((l) => l.trim() !== '' && !l.trim().startsWith('#'))
-  if (body.length === 0) return undefined
-
-  // Determine the structure: if first non-blank line starts with '-', it's a list
-  const first = body[0]!
-  const firstTrimmed = first.trimStart()
-  if (firstTrimmed.startsWith('- ')) {
-    // For lists, pass the ORIGINAL lines (preserving relative indentation)
-    // so parseYamlList can distinguish same-level vs deeper '- ' lines.
-    return parseYamlList(body)
+function blockEnd(lines: string[], startLine: number, dashIndent: number): number {
+  let end = startLine + 1
+  while (end < lines.length) {
+    const line = lines[end]!
+    if (line.trim() === '') { end++; continue } // blank — tentatively inside
+    const ind = indentOf(line)
+    if (ind < dashIndent) break                        // dedent → section end
+    if (ind === dashIndent && line.trimStart().startsWith('- ')) break // next item
+    end++
   }
-
-  // For mappings, strip common indent so keys align to indent 0
-  const minIndent = Math.min(...body.map((l) => l.length - l.trimStart().length))
-  const stripped = body.map((l) => (l.trim() === '' ? '' : l.slice(minIndent)))
-  return parseYamlMapping(stripped, 0)
+  // Trim trailing blank lines out of the block
+  while (end > startLine + 1 && lines[end - 1]!.trim() === '') end--
+  return end
 }
 
-function parseYamlList(lines: string[]): unknown[] {
-  const items: unknown[] = []
-  let currentItemLines: string[] = []
-  let listIndent = -1 // indent of the first '- ' line, set on first item
+/**
+ * Find the entry block for `modelId` in the raw lines.  An entry starts at a
+ * `- id: <modelId>` list line and extends until the next line that is a list
+ * item (`- `) at the same indent, or any line at a shallower indent
+ * (section boundary).  `fromLine` limits the search start (for finding
+ * subsequent occurrences of the same id).  Returns null when not found.
+ */
+function findEntryBlock(lines: string[], modelId: string, fromLine = 0): EntryBlock | null {
+  const escaped = modelId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const startRe = new RegExp(`^( *)- id: ?["']?${escaped}["']?\\s*$`)
 
-  const flushItem = () => {
-    if (currentItemLines.length > 0) {
-      // The first line starts with "- key: value" — strip the "- " prefix
-      // and align the first key's indent with the rest of the item body.
-      const first = currentItemLines[0]!
-      const dashIdx = first.indexOf('- ')
-      const rest = dashIdx >= 0 ? first.slice(dashIdx + 2) : first
-      // The item's key indent = list indent + 2 (YAML increment after '- ')
-      const itemKeyIndent = listIndent + 2
-      const aligned = ' '.repeat(itemKeyIndent) + rest.trimStart()
-      const bodyLines = [aligned, ...currentItemLines.slice(1)]
-      // Strip common indent from body lines (relative to the item's key indent)
-      const contentLines = bodyLines.filter((l) => l.trim() !== '')
-      if (contentLines.length > 0) {
-        const minIndent = Math.min(...contentLines.map((l) => l.length - l.trimStart().length))
-        const stripped = bodyLines.map((l) => (l.trim() === '' ? '' : l.slice(minIndent)))
-        // If the first line is a bare scalar (no colon), it's a scalar list item
-        const firstTrimmed = stripped[0]!.trim()
-        if (!firstTrimmed.includes(':') || firstTrimmed.startsWith('- ')) {
-          items.push(parseYamlScalar(firstTrimmed))
-        } else {
-          items.push(parseYamlMapping(stripped, 0))
-        }
-      } else {
-        items.push({})
-      }
-    }
-    currentItemLines = []
+  for (let i = fromLine; i < lines.length; i++) {
+    const m = lines[i]!.match(startRe)
+    if (m === null) continue
+    const dashIndent = m[1]!.length
+    const end = blockEnd(lines, i, dashIndent)
+    return { text: lines.slice(i, end).join('\n'), startLine: i, endLine: end, dashIndent }
   }
-
-  for (const line of lines) {
-    const trimmed = line.trimStart()
-    const indent = line.length - trimmed.length
-    if (trimmed.startsWith('- ')) {
-      // Only treat as a new list item if at the same indent as the list base.
-      // Deeper '- ' lines are children of the current item (e.g., block sequence
-      // values of a mapping key inside the current list item).
-      if (currentItemLines.length === 0) {
-        // First item — set the list base indent
-        listIndent = indent
-        flushItem()
-        currentItemLines.push(line)
-      } else if (indent === listIndent) {
-        // Same indent — new list item
-        flushItem()
-        currentItemLines.push(line)
-      } else {
-        // Deeper indent — child of current item (block sequence value)
-        currentItemLines.push(line)
-      }
-    } else {
-      currentItemLines.push(line)
-    }
-  }
-  flushItem()
-  return items
+  return null
 }
 
-function parseYamlMapping(lines: string[], baseIndent: number): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  let currentKey: string | null = null
-  let currentChildLines: string[] = []
-  let keyIndent = baseIndent
-
-  const flush = () => {
-    if (currentKey !== null) {
-      if (currentChildLines.length > 0) {
-        // Detect the child indent from the first child line
-        const childIndent = currentChildLines[0]!.length - currentChildLines[0]!.trimStart().length
-        // Strip the common leading whitespace so children are relative to indent 0
-        const stripped = currentChildLines.map((l) => {
-          if (l.trim() === '') return ''
-          return l.slice(childIndent)
-        })
-        result[currentKey] = parseYamlSection(stripped, 0)
+/**
+ * Whether the entry block declares `image` in its modalities.
+ * Handles both flow style (`inputModalities: [ text, image ]`) and block
+ * style (a `input:`/`inputModalities:` key whose following `- ` lines are
+ * indented deeper than the key).
+ */
+function blockDeclaresImage(block: EntryBlock): boolean {
+  const lines = block.text.split('\n')
+  const modKeyRe = /^( *)(input|inputModalities):(.*)$/
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(modKeyRe)
+    if (m === null) continue
+    const inline = m[3]!.trim()
+    if (inline !== '') {
+      // Flow style: [ text, image ] / [image] / []
+      return /\bimage\b/.test(inline)
+    }
+    // Block style: subsequent `- x` lines at the key's indent or deeper
+    // (YAML allows sequence items at the same indent as their parent key)
+    const keyIndent = m[1]!.length
+    for (let j = i + 1; j < lines.length; j++) {
+      const l = lines[j]!
+      if (l.trim() === '') continue
+      const ind = indentOf(l)
+      const t = l.trim()
+      if (t.startsWith('- ') && ind >= keyIndent) {
+        if (/\bimage\b/.test(t.slice(2))) return true
+      } else if (ind <= keyIndent) {
+        break // next key or dedent — modalities list ended
+      } else {
+        break // deeper non-item line — unexpected, treat as end
       }
-      currentChildLines = []
     }
   }
+  return false
+}
 
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\r$/, '')
-    if (line.trim() === '' || line.trim().startsWith('#')) {
-      if (currentKey !== null) currentChildLines.push(line)
+/** Whether the entry block carries the plugin's marker. */
+function blockHasMarker(block: EntryBlock): boolean {
+  return block.text.split('\n').some((l) => l.trim() === VISION_BRIDGE_MARKER)
+}
+
+// ---------------------------------------------------------------------------
+// Edits (pure text → text)
+// ---------------------------------------------------------------------------
+
+/**
+ * Add `image` to the entry's modalities and append the marker line.
+ * Flow style → rewrite the bracket content; block style → insert a
+ * `- image` line after the last modality item; no modalities key →
+ * create block-style lines matching the entry's key indent.
+ */
+function addImageAndMarker(block: EntryBlock): string {
+  const lines = block.text.split('\n')
+  const modKeyRe = /^( *)(input|inputModalities):(.*)$/
+  let modKeyIdx = -1
+  let modKeyIndent = -1
+  let modInline = ''
+  let lastModItemIdx = -1 // last `- x` line of the block-style modality list
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(modKeyRe)
+    if (m !== null) {
+      modKeyIdx = i
+      modKeyIndent = m[1]!.length
+      modInline = m[3]!.trim()
+      lastModItemIdx = -1
       continue
     }
-    const indent = line.length - line.trimStart().length
-    const trimmed = line.trimStart()
-
-    // A key at the SAME indent as baseIndent is a sibling at this level.
-    // A key at a DEEPER indent is a child of the current key.
-    // A key at a SHALLOWER indent belongs to a parent — stop processing.
-    const keyMatch = trimmed.match(/^([\w@./_-]+):\s*(.*)/)
-
-    if (indent === baseIndent && keyMatch) {
-      // Sibling key at this level — flush previous and start new key
-      flush()
-      currentKey = keyMatch[1]!
-      keyIndent = indent
-      const value = keyMatch[2]!.trim()
-      if (value !== '') {
-        result[currentKey] = parseYamlScalar(value)
-        currentKey = null
-      }
-    } else if (indent < baseIndent) {
-      // Shallow indent — belongs to parent, stop
-      break
-    } else if (currentKey !== null) {
-      // Deeper indent or non-key line — child of current key
-      currentChildLines.push(line)
+    if (modKeyIdx !== -1 && modInline === '') {
+      const t = lines[i]!.trim()
+      const ind = indentOf(lines[i]!)
+      if (t.startsWith('- ') && ind >= modKeyIndent) lastModItemIdx = i
+      else if (ind <= modKeyIndent && t !== '') break
     }
   }
-  flush()
-  return result
-}
 
-function parseYamlScalar(value: string): unknown {
-  if (value === 'true') return true
-  if (value === 'false') return false
-  if (value === 'null' || value === '~' || value === '') return null
-  // Flow sequence: [a, b, c] or []
-  if (value === '[]') return []
-  const flowSeq = value.match(/^\[(.+)\]$/)
-  if (flowSeq) {
-    return flowSeq[1]!.split(',').map((s) => parseYamlScalar(s.trim()))
+  if (modKeyIdx === -1) {
+    // No modalities key — add `inputModalities:` block with image.
+    const keyIndent = ' '.repeat(block.dashIndent + 2)
+    lines.push(`${keyIndent}inputModalities:`)
+    lines.push(`${keyIndent}  - image`)
+  } else if (modInline !== '') {
+    // Flow style — rewrite bracket content preserving order
+    const inner = modInline.replace(/^\[/, '').replace(/\]$/, '').trim()
+    const items = inner === '' ? [] : inner.split(',').map((s) => s.trim()).filter((s) => s !== '')
+    if (!items.includes('image')) items.push('image')
+    const keyName = lines[modKeyIdx]!.trimStart().split(':')[0]!
+    lines[modKeyIdx] = `${' '.repeat(modKeyIndent)}${keyName}: [ ${items.join(', ')} ]`
+  } else if (lastModItemIdx !== -1) {
+    // Block style — insert `- image` after the last item, matching its indent
+    const itemIndent = indentOf(lines[lastModItemIdx]!)
+    lines.splice(lastModItemIdx + 1, 0, `${' '.repeat(itemIndent)}- image`)
+  } else {
+    // Key exists with empty block value (malformed) — add item under it
+    lines.splice(modKeyIdx + 1, 0, `${' '.repeat(modKeyIndent + 2)}- image`)
   }
-  // Quoted string
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1)
+
+  if (!lines.some((l) => l.trim() === VISION_BRIDGE_MARKER)) {
+    lines.push(`${' '.repeat(block.dashIndent + 2)}${VISION_BRIDGE_MARKER}`)
   }
-  // Number
-  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
-  return value
-}
-
-// ---------------------------------------------------------------------------
-// YAML writer — produces the minimal output that matches settings.yaml style.
-// ---------------------------------------------------------------------------
-
-function serializeYamlValue(value: unknown, indent: number): string {
-  const pad = '  '.repeat(indent)
-  if (value === null || value === undefined) return 'null'
-  if (typeof value === 'boolean') return String(value)
-  if (typeof value === 'number') return String(value)
-  if (typeof value === 'string') {
-    if (value === '' || /[:#{}[\],&*?|>!%@`]/.test(value) || value.startsWith('- ') || value.startsWith("'") || value.startsWith('"')) {
-      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-    }
-    return value
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return '[]'
-    // Simple scalar arrays on one line
-    if (value.every((v) => typeof v !== 'object' || v === null)) {
-      return `[${value.map((v) => serializeYamlValue(v, 0)).join(', ')}]`
-    }
-    // Complex arrays as block sequences
-    return '\n' + value.map((v) => {
-      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
-        const entries = Object.entries(v as Record<string, unknown>)
-        if (entries.length === 0) return `${pad}  - {}`
-        const first = entries[0]!
-        const rest = entries.slice(1)
-        let s = `${pad}  - ${first[0]}: ${serializeYamlValue(first[1], indent + 2)}`
-        for (const [k, v2] of rest) {
-          s += `\n${pad}    ${k}: ${serializeYamlValue(v2, indent + 2)}`
-        }
-        return s
-      }
-      return `${pad}  - ${serializeYamlValue(v, indent + 1)}`
-    }).join('\n')
-  }
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-    if (entries.length === 0) return '{}'
-    return '\n' + entries.map(([k, v]) => `${pad}  ${k}: ${serializeYamlValue(v, indent + 1)}`).join('\n')
-  }
-  return String(value)
-}
-
-function serializeYaml(data: Record<string, unknown>): string {
-  const lines: string[] = []
-  for (const [key, value] of Object.entries(data)) {
-    if (value === undefined) continue
-    const serialized = serializeYamlValue(value, 0)
-    if (serialized.startsWith('\n')) {
-      lines.push(`${key}:${serialized}`)
-    } else {
-      lines.push(`${key}: ${serialized}`)
-    }
-  }
-  return lines.join('\n') + '\n'
-}
-
-// ---------------------------------------------------------------------------
-// Model modalities sync logic
-// ---------------------------------------------------------------------------
-
-const VISION_BRIDGE_MARKER = '_visionBridge'
-
-interface ModelEntry {
-  id: string
-  input?: string[]
-  inputModalities?: string[]
-  [VISION_BRIDGE_MARKER]?: boolean
-  [k: string]: unknown
-}
-
-/** Read the `input` or `inputModalities` array from a model entry. */
-function getModelModalities(model: ModelEntry): string[] {
-  return (model.input ?? model.inputModalities ?? []) as string[]
-}
-
-/** Set the `input` or `inputModalities` array on a model entry. */
-function setModelModalities(model: ModelEntry, modalities: string[]): void {
-  if ('input' in model) model.input = modalities
-  else if ('inputModalities' in model) model.inputModalities = modalities
-  else model.input = modalities // default to `input`
+  return lines.join('\n')
 }
 
 /**
- * Locate all model entries in a parsed settings.yaml that match a given
- * model id.  Searches all `llm-*` provider sections.
- * Returns the mutable entries (so the caller can modify them in place).
+ * Remove the plugin-added `image` modality and the marker line.
+ * Only removes ONE `image` item (the last in the modality list) and only
+ * when the marker is present — native multimodal entries never carry it.
  */
-function findModelEntries(settings: Record<string, unknown>, modelId: string): ModelEntry[] {
-  const entries: ModelEntry[] = []
-  for (const [key, value] of Object.entries(settings)) {
-    if (!key.startsWith('llm') || typeof value !== 'object' || value === null) continue
-    const section = value as Record<string, unknown>
-    // providers: { providerName: { models: [...] } }
-    const providers = section.providers as Record<string, unknown> | undefined
-    if (providers && typeof providers === 'object') {
-      for (const prov of Object.values(providers)) {
-        if (typeof prov !== 'object' || prov === null) continue
-        const models = (prov as Record<string, unknown>).models
-        if (Array.isArray(models)) {
-          for (const m of models) {
-            if (typeof m === 'object' && m !== null && (m as ModelEntry).id === modelId) {
-              entries.push(m as ModelEntry)
-            }
-          }
-        }
-      }
-    }
-    // Also check flat `models: [...]` at section level
-    const models = section.models
-    if (Array.isArray(models)) {
-      for (const m of models) {
-        if (typeof m === 'object' && m !== null && (m as ModelEntry).id === modelId) {
-          entries.push(m as ModelEntry)
-        }
-      }
-    }
-  }
-  return entries
-}
+function removeImageAndMarker(block: EntryBlock): string {
+  const lines = block.text.split('\n')
+  // Remove the marker line first
+  const markerIdx = lines.findIndex((l) => l.trim() === VISION_BRIDGE_MARKER)
+  if (markerIdx === -1) return block.text
+  lines.splice(markerIdx, 1)
 
-/**
- * For each model in `bridgeModels`, ensure `image` is declared in its
- * inputModalities and the `_visionBridge` marker is set.  Skips models
- * that already have `image` (native multimodal — never touched).
- *
- * @returns model ids that were actually modified.
- */
-export async function ensureBridgeModalities(
-  settingsPath: string,
-  bridgeModels: readonly string[],
-  log: (msg: string) => void,
-): Promise<string[]> {
-  if (bridgeModels.length === 0) return []
+  // Remove the last `- image` line inside a modality sub-block
+  const modKeyRe = /^( *)(input|inputModalities):(.*)$/
+  let modKeyIdx = -1
+  let modKeyIndent = -1
+  let modInline = ''
+  let lastImageItemIdx = -1
 
-  const text = await readFile(settingsPath, 'utf-8')
-  const settings = parseYamlMinimal(text)
-  if (!settings) {
-    log('modalities-sync: could not parse settings.yaml — skipping auto-configure')
-    return []
-  }
-
-  const modified: string[] = []
-  for (const modelId of bridgeModels) {
-    const entries = findModelEntries(settings, modelId)
-    if (entries.length === 0) {
-      // Model not found in settings — create a minimal entry? No — the model
-      // must already be known to the harness.  Log and skip.
-      log(`modalities-sync: model "${modelId}" not found in settings.yaml — cannot auto-configure bridge`)
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(modKeyRe)
+    if (m !== null) {
+      modKeyIdx = i
+      modKeyIndent = m[1]!.length
+      modInline = m[3]!.trim()
+      lastImageItemIdx = -1
       continue
     }
-    for (const entry of entries) {
-      const modalities = getModelModalities(entry)
-      if (modalities.includes('image')) {
-        // Already image-capable.  If it was added by US in a previous run,
-        // the marker should already be set; if not, it's native — don't touch.
-        continue
-      }
-      // Add image + marker
-      modalities.push('image')
-      setModelModalities(entry, modalities)
-      entry[VISION_BRIDGE_MARKER] = true
-      modified.push(modelId)
-    }
-  }
-
-  if (modified.length > 0) {
-    await atomicWrite(settingsPath, serializeYaml(settings))
-    log(`modalities-sync: declared image input for bridge models: ${modified.join(', ')}`)
-  }
-  // Deduplicate: a model may appear in multiple providers
-  return [...new Set(modified)]
-}
-
-/**
- * For each model in `removedModels`, revert the bridge configuration:
- * strip `image` from inputModalities and remove the `_visionBridge` marker.
- * Only touches models that carry the marker (plugin-configured, not native).
- *
- * @returns model ids that were actually reverted.
- */
-export async function revertBridgeModalities(
-  settingsPath: string,
-  removedModels: readonly string[],
-  log: (msg: string) => void,
-): Promise<string[]> {
-  if (removedModels.length === 0) return []
-
-  const text = await readFile(settingsPath, 'utf-8')
-  const settings = parseYamlMinimal(text)
-  if (!settings) {
-    log('modalities-sync: could not parse settings.yaml — skipping revert')
-    return []
-  }
-
-  const reverted: string[] = []
-  for (const modelId of removedModels) {
-    const entries = findModelEntries(settings, modelId)
-    for (const entry of entries) {
-      if (!entry[VISION_BRIDGE_MARKER]) continue // not plugin-configured
-      const modalities = getModelModalities(entry)
-      const filtered = modalities.filter((m) => m !== 'image')
-      setModelModalities(entry, filtered)
-      delete entry[VISION_BRIDGE_MARKER]
-      reverted.push(modelId)
-    }
-  }
-
-  if (reverted.length > 0) {
-    await atomicWrite(settingsPath, serializeYaml(settings))
-    log(`modalities-sync: reverted image input for: ${reverted.join(', ')}`)
-  }
-  return [...new Set(reverted)]
-}
-
-/**
- * Revert ALL models that carry the `_visionBridge` marker — used when the
- * plugin is disabled or uninstalled.
- */
-export async function revertAllBridgeModalities(
-  settingsPath: string,
-  log: (msg: string) => void,
-): Promise<string[]> {
-  const text = await readFile(settingsPath, 'utf-8')
-  const settings = parseYamlMinimal(text)
-  if (!settings) return []
-
-  const reverted: string[] = []
-
-  // Scan every model entry in every llm-* section
-  for (const [key, value] of Object.entries(settings)) {
-    if (!key.startsWith('llm') || typeof value !== 'object' || value === null) continue
-    const section = value as Record<string, unknown>
-    const scanModels = (models: unknown) => {
-      if (!Array.isArray(models)) return
-      for (const m of models) {
-        if (typeof m !== 'object' || m === null) continue
-        const entry = m as ModelEntry
-        if (!entry[VISION_BRIDGE_MARKER]) continue
-        const modalities = getModelModalities(entry)
-        const filtered = modalities.filter((mod) => mod !== 'image')
-        setModelModalities(entry, filtered)
-        const id = entry.id ?? 'unknown'
-        delete entry[VISION_BRIDGE_MARKER]
-        reverted.push(id as string)
+    if (modKeyIdx !== -1 && modInline === '') {
+      const t = lines[i]!.trim()
+      const ind = indentOf(lines[i]!)
+      if (t.startsWith('- ') && ind >= modKeyIndent && /\bimage\b/.test(t.slice(2))) {
+        lastImageItemIdx = i
+      } else if (ind <= modKeyIndent && t !== '') {
+        break
       }
     }
-    const providers = section.providers
-    if (providers && typeof providers === 'object') {
-      for (const prov of Object.values(providers as Record<string, unknown>)) {
-        if (typeof prov === 'object' && prov !== null) {
-          scanModels((prov as Record<string, unknown>).models)
-        }
-      }
-    }
-    scanModels(section.models)
   }
 
-  if (reverted.length > 0) {
-    await atomicWrite(settingsPath, serializeYaml(settings))
-    log(`modalities-sync: reverted all bridge modalities: ${reverted.join(', ')}`)
+  if (modKeyIdx !== -1 && modInline !== '') {
+    // Flow style — remove 'image' from the bracket content
+    const inner = modInline.replace(/^\[/, '').replace(/\]$/, '').trim()
+    const items = inner === '' ? [] : inner.split(',').map((s) => s.trim()).filter((s) => s !== '' && s !== 'image')
+    const keyName = lines[modKeyIdx]!.trimStart().split(':')[0]!
+    if (items.length === 0) {
+      lines.splice(modKeyIdx, 1) // remove the key entirely
+    } else {
+      lines[modKeyIdx] = `${' '.repeat(modKeyIndent)}${keyName}: [ ${items.join(', ')} ]`
+    }
+  } else if (lastImageItemIdx !== -1) {
+    lines.splice(lastImageItemIdx, 1)
   }
-  return [...new Set(reverted)]
+
+  return lines.join('\n')
 }
 
 // ---------------------------------------------------------------------------
-// Atomic file write (temp + rename)
+// File-level operations (read → patch lines → backup → atomic write)
 // ---------------------------------------------------------------------------
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tmp = join(tmpdir(), `uva-settings-${randomBytes(6).toString('hex')}.yaml`)
   await writeFile(tmp, content, 'utf-8')
   await rename(tmp, filePath)
+}
+
+async function backupFile(filePath: string): Promise<void> {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupPath = join(dirname(filePath), `settings.yaml.bak-uva-${ts}`)
+  await copyFile(filePath, backupPath)
+}
+
+/**
+ * Patch the raw text for the given models.  `edit` returns the replacement
+ * entry text, or null to leave the entry untouched.
+ */
+async function patchEntries(
+  settingsPath: string,
+  modelIds: readonly string[],
+  edit: (block: EntryBlock) => string | null,
+  log: (msg: string) => void,
+): Promise<string[]> {
+  if (modelIds.length === 0) return []
+  const text = await readFile(settingsPath, 'utf-8')
+  const lines = text.split('\n')
+  const touched: string[] = []
+
+  for (const modelId of modelIds) {
+    let searchFrom = 0
+    for (;;) {
+      const block = findEntryBlock(lines, modelId, searchFrom)
+      if (block === null) {
+        if (searchFrom === 0) log(`model "${modelId}" not found in settings.yaml — skipping`)
+        break
+      }
+      searchFrom = block.endLine
+      const replacement = edit(block)
+      if (replacement === null) continue
+      const newLines = replacement.split('\n')
+      lines.splice(block.startLine, block.endLine - block.startLine, ...newLines)
+      searchFrom = block.startLine + newLines.length
+      touched.push(modelId)
+    }
+  }
+
+  if (touched.length > 0) {
+    await backupFile(settingsPath)
+    await atomicWrite(settingsPath, lines.join('\n'))
+    log(`settings.yaml updated for: ${[...new Set(touched)].join(', ')} (backup written)`)
+  }
+  return [...new Set(touched)]
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure every model in `bridgeModels` declares `image` input, marked with
+ * `_visionBridge: true`.  Native multimodal models (already had `image`,
+ * no marker) are left untouched.  A backup is written before modification.
+ * @returns model ids that were actually modified (deduplicated).
+ */
+export async function ensureBridgeModalities(
+  settingsPath: string,
+  bridgeModels: readonly string[],
+  log: (msg: string) => void,
+): Promise<string[]> {
+  return patchEntries(settingsPath, bridgeModels, (block) => {
+    if (blockHasMarker(block)) return null            // already configured by us
+    if (blockDeclaresImage(block)) return null        // native multimodal
+    return addImageAndMarker(block)
+  }, log)
+}
+
+/**
+ * Revert plugin-added image support for the given models (marker-gated).
+ * @returns model ids that were actually reverted (deduplicated).
+ */
+export async function revertBridgeModalities(
+  settingsPath: string,
+  removedModels: readonly string[],
+  log: (msg: string) => void,
+): Promise<string[]> {
+  return patchEntries(settingsPath, removedModels, (block) => {
+    if (!blockHasMarker(block)) return null           // not plugin-configured
+    return removeImageAndMarker(block)
+  }, log)
+}
+
+/**
+ * Revert EVERY entry carrying the `_visionBridge` marker — used when the
+ * plugin is disabled or uninstalled.
+ * @returns model ids that were actually reverted (deduplicated).
+ */
+export async function revertAllBridgeModalities(
+  settingsPath: string,
+  log: (msg: string) => void,
+): Promise<string[]> {
+  const text = await readFile(settingsPath, 'utf-8')
+  const lines = text.split('\n')
+  const touched: string[] = []
+  // Collect patches against the ORIGINAL array first, then apply bottom-up —
+  // splicing while scanning shifts indices and silently skips later entries.
+  const patches: Array<{ start: number; end: number; replacement: string }> = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(/^( *)- id: ?["']?([\w@./-]+)["']?\s*$/)
+    if (m === null) continue
+    const dashIndent = m[1]!.length
+    const end = blockEnd(lines, i, dashIndent)
+    const block: EntryBlock = {
+      text: lines.slice(i, end).join('\n'),
+      startLine: i,
+      endLine: end,
+      dashIndent,
+    }
+    if (!blockHasMarker(block)) continue
+    patches.push({ start: i, end, replacement: removeImageAndMarker(block) })
+    touched.push(m[2]!)
+  }
+
+  if (patches.length > 0) {
+    for (const p of patches.reverse()) {
+      const newLines = p.replacement.split('\n')
+      lines.splice(p.start, p.end - p.start, ...newLines)
+    }
+    await backupFile(settingsPath)
+    await atomicWrite(settingsPath, lines.join('\n'))
+    log(`reverted all bridge modalities: ${[...new Set(touched)].join(', ')} (backup written)`)
+  }
+  return [...new Set(touched)]
 }
