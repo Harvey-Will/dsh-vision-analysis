@@ -8,13 +8,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 Version aligned with the DeepSeek Harness `0.1.2-rc.1` release (installed via the npm `alpha` → `0.1.2-rc.1` dist-tag).
 
 ### Added
+- **Bridge modalities auto-sync**: models listed in `bridgeModels` are configured automatically — the plugin adds `image` to the model's `inputModalities` in settings.yaml and marks the entry with `_visionBridge: true`, so the harness admits image prompts without manual editing. Removing a model from `bridgeModels` (or deactivating the plugin) reverts every marked entry to its pre-bridge state; native multimodal models are never touched. Edits are surgical (raw-text line patches — the whole file is never rewritten) and every modification is preceded by a timestamped backup.
 - **Multi-endpoint priority groups (F1)**: `endpoints: [{ baseURL, apiKey, model, fallbackModels? }, …]` — additional vision provider groups tried in priority order when the groups before them fail (rate limits, auth errors, endpoint 404/subscription errors, network failures). Each group carries its own key and model ids (ids never cross groups). The stock OVHcloud free group automatically demotes to last-resort fallback once any own group is configured. Chain exhaustion reports every attempt (`组N [model @ baseURL]: error`); pure rate-limit exhaustion keeps the existing quota notice. Bridge and `analyze_image` both fail over across groups; a single-group deployment behaves exactly as before.
-- Bridge modalities sync hardening: post-write integrity verification with automatic backup rollback, backup retention (5 most recent), and a surgical text editor that never rewrites the whole settings.yaml.
+- Client-side composer dock entry, settings section, and `analyze_image` tool all registered through the rc.1 settings/tool APIs (see Changed).
 
 ### Changed
 - Dev dependencies aligned to `0.1.2-rc.1` so typecheck and the client-face build run against the same package set the rc.1 host ships.
 - Peer/dependency ranges verified to accept `0.1.2-rc.1` (`>=0.1.2-alpha.1` branch; SemVer prerelease tuples mean `^0.1.1-rc.2` alone does NOT match it).
-- Settings registration runs through the rc.1 `SettingsProvider.installSection` method with an automatic fallback to the legacy standalone `installSettingsSection` for older hosts.
+- Settings registration runs through the rc.1 `SettingsProvider.installSection` method with an automatic fallback to the legacy standalone `installSettingsSection` for older hosts; the client `ctx.slots` Context merge now loads from `dsh-client-ui-renderer/client`, and `JsonValue` from `dsh-util-values` (both moved upstream in rc.1).
+- Sync hardening (P1): post-write integrity verification with automatic backup rollback (top-level key loss and empty-object corruption both trigger restore), backup retention (5 most recent), and byte-for-byte round-trip fidelity tests over a real-structure settings.yaml benchmark.
 
 ### Known limitations
 - `@deepseek-ai/dsh-client-runtime`, `@deepseek-ai/dsh-client-web-react` and
@@ -24,8 +26,10 @@ Version aligned with the DeepSeek Harness `0.1.2-rc.1` release (installed via th
   (active community plugins declare the same injects).
 - The image bridge requires per-deployment setup (`bridgeModels` plus an
   `image` declaration in the model's `inputModalities`) and is not zero-config.
+  The modalities auto-sync removes the manual settings.yaml step; a restart is
+  still needed for the running harness to reload the model registry.
 - Failover fallback model ids are endpoint-specific and must be adjusted when
-  pointing away from the default provider.
+  pointing away from the default provider (each `endpoints` group carries its own).
 
 ## [0.1.2-alpha.5] - 2026-08-28
 
