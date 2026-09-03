@@ -28,6 +28,9 @@ import type { Context } from '@deepseek-ai/cordis'
 // are erased at build time and never enter the browser bundle.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+// rc.1 moved the `ctx.slots: SlotRegistry` Context merge into the renderer
+// package (the slots package became a declaration-merging pure core).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 

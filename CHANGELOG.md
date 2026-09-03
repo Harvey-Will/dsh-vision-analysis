@@ -3,11 +3,29 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.1.2-rc.1] — 2026-09-03
+
+Version aligned with the DeepSeek Harness `0.1.2-rc.1` release (installed via the npm `alpha` → `0.1.2-rc.1` dist-tag).
+
+### Changed
+- Dev dependencies aligned to `0.1.2-rc.1` so typecheck and the client-face build run against the same package set the rc.1 host ships.
+- Peer/dependency ranges verified to accept `0.1.2-rc.1` (`>=0.1.2-alpha.1` branch; SemVer prerelease tuples mean `^0.1.1-rc.2` alone does NOT match it).
+- Settings registration runs through the rc.1 `SettingsProvider.installSection` method with an automatic fallback to the legacy standalone `installSettingsSection` for older hosts.
+
+### Known limitations
+- `@deepseek-ai/dsh-client-runtime`, `@deepseek-ai/dsh-client-web-react` and
+  `@deepseek-ai/dsh-host-apiproxy` were not republished in the `0.1.2` line;
+  dev-installed copies stay at their latest versions. They resolve only at
+  build time — at runtime the host frontend still serves these module ids
+  (active community plugins declare the same injects).
+- The image bridge requires per-deployment setup (`bridgeModels` plus an
+  `image` declaration in the model's `inputModalities`) and is not zero-config.
+- Failover fallback model ids are endpoint-specific and must be adjusted when
+  pointing away from the default provider.
+
 ## [0.1.2-alpha.5] - 2026-08-28
 
 Version aligned with the DeepSeek Harness `dsh-v0.1.2-alpha.5` prerelease line.
-Compatibility with that prerelease is under verification; the peer-version
-range may still need a `0.1.2` prerelease branch before installing against it.
 
 ### Added
 - Built-in default vision source: OVHcloud AI Endpoints free anonymous tier (Qwen2.5-VL-72B-Instruct), zero-config on first install.
