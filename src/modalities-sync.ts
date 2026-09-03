@@ -18,7 +18,7 @@
  * @module dsh-vision-analysis/modalities-sync
  */
 
-import { readFile, writeFile, rename, copyFile } from 'node:fs/promises'
+import { readFile, writeFile, rename, copyFile, readdir, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -221,10 +221,12 @@ function removeImageAndMarker(block: EntryBlock): string {
     if (modKeyIdx !== -1 && modInline === '') {
       const t = lines[i]!.trim()
       const ind = indentOf(lines[i]!)
-      if (t.startsWith('- ') && ind >= modKeyIndent && /\bimage\b/.test(t.slice(2))) {
-        lastImageItemIdx = i
+      if (t.startsWith('- ') && ind >= modKeyIndent) {
+        // Sequence item — check if it's the image we want to remove.
+        if (/\bimage\b/.test(t.slice(2))) lastImageItemIdx = i
+        // Either way, continue scanning (there may be more items after).
       } else if (ind <= modKeyIndent && t !== '') {
-        break
+        break // next key or dedent — modalities list ended
       }
     }
   }
@@ -235,7 +237,9 @@ function removeImageAndMarker(block: EntryBlock): string {
     const items = inner === '' ? [] : inner.split(',').map((s) => s.trim()).filter((s) => s !== '' && s !== 'image')
     const keyName = lines[modKeyIdx]!.trimStart().split(':')[0]!
     if (items.length === 0) {
-      lines.splice(modKeyIdx, 1) // remove the key entirely
+      // Keep the key with an empty array — removing it changes semantics
+      // (no input declared vs empty input declared).
+      lines[modKeyIdx] = `${' '.repeat(modKeyIndent)}${keyName}: []`
     } else {
       lines[modKeyIdx] = `${' '.repeat(modKeyIndent)}${keyName}: [ ${items.join(', ')} ]`
     }
@@ -247,8 +251,10 @@ function removeImageAndMarker(block: EntryBlock): string {
 }
 
 // ---------------------------------------------------------------------------
-// File-level operations (read → patch lines → backup → atomic write)
+// File-level operations (read → patch lines → backup → verify → atomic write)
 // ---------------------------------------------------------------------------
+
+const BACKUP_KEEP_COUNT = 5
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tmp = join(tmpdir(), `uva-settings-${randomBytes(6).toString('hex')}.yaml`)
@@ -256,15 +262,69 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
   await rename(tmp, filePath)
 }
 
-async function backupFile(filePath: string): Promise<void> {
+async function backupFile(filePath: string): Promise<string> {
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
   const backupPath = join(dirname(filePath), `settings.yaml.bak-uva-${ts}`)
   await copyFile(filePath, backupPath)
+  return backupPath
+}
+
+/**
+ * Post-write integrity check.  Reads the written file back and verifies:
+ *  1. the file is non-empty and contains expected top-level keys,
+ *  2. no corrupted empty-object strings (`: "{}"` instead of `: {}`).
+ *
+ * Returns `null` if valid, or a human-readable reason if corrupted.
+ */
+async function verifyIntegrity(
+  filePath: string,
+  originalText: string,
+): Promise<string | null> {
+  let written: string
+  try {
+    written = await readFile(filePath, 'utf-8')
+  } catch (err) {
+    return `file unreadable after write: ${err}`
+  }
+  if (written.length === 0) return 'file is empty after write'
+  // Extract top-level keys from the original and verify they survived.
+  const origKeys = [...originalText.matchAll(/^([\w@./-]+):/gm)].map((m) => m[1])
+  for (const key of origKeys) {
+    const escaped = key!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (!new RegExp(`^${escaped}:`, 'm').test(written)) {
+      return `top-level key "${key}" was dropped during write`
+    }
+  }
+  // Detect the known corruption pattern: empty objects written as quoted strings.
+  const corruptedEmpties = (written.match(/: "{}"/g) || []).length
+  const origEmpties = (originalText.match(/: "{}"/g) || []).length
+  if (corruptedEmpties > origEmpties) {
+    return `empty-object corruption detected (${origEmpties} → ${corruptedEmpties} occurrences of ": \\"{}\\"")`
+  }
+  return null
+}
+
+/**
+ * Keep only the most recent `keep` backup files matching `settings.yaml.bak-uva-*`.
+ */
+async function cleanupBackups(dir: string, keep: number): Promise<void> {
+  try {
+    const entries = await readdir(dir)
+    const backups = entries
+      .filter((e) => e.startsWith('settings.yaml.bak-uva-'))
+      .sort()
+      .reverse() // newest first
+    for (const old of backups.slice(keep)) {
+      await unlink(join(dir, old)).catch(() => {})
+    }
+  } catch { /* best-effort — directory might not be readable */ }
 }
 
 /**
  * Patch the raw text for the given models.  `edit` returns the replacement
- * entry text, or null to leave the entry untouched.
+ * entry text, or null to leave the entry untouched.  After writing, the
+ * file is re-read and verified; on any integrity failure the backup is
+ * restored automatically.
  */
 async function patchEntries(
   settingsPath: string,
@@ -296,9 +356,21 @@ async function patchEntries(
   }
 
   if (touched.length > 0) {
-    await backupFile(settingsPath)
+    const backupPath = await backupFile(settingsPath)
     await atomicWrite(settingsPath, lines.join('\n'))
+
+    // P1-2: post-write integrity verification — auto-rollback on failure.
+    const issue = await verifyIntegrity(settingsPath, text)
+    if (issue !== null) {
+      log(`INTEGRITY CHECK FAILED: ${issue} — rolling back from backup`)
+      await copyFile(backupPath, settingsPath)
+      return []
+    }
+
     log(`settings.yaml updated for: ${[...new Set(touched)].join(', ')} (backup written)`)
+
+    // P1-3: clean up old backups (keep only the most recent N).
+    await cleanupBackups(dirname(settingsPath), BACKUP_KEEP_COUNT)
   }
   return [...new Set(touched)]
 }
