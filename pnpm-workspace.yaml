@@ -5,18 +5,15 @@ packages:
 # the resolution to stale versions. The committed lockfile pins exact versions,
 # so the supply-chain window protection is not needed here.
 minimumReleaseAge: 0
-# Upstream publishing bug (0.1.2-rc.1, 2026-09-03): some DSH packages convert
-# their `workspace:^` dependency on dsh-session-projection into a FINAL-only
-# npm range (">=0.1.2 <0.2.0-0") that cannot match the published 0.1.2-rc.1.
-# The monorepo resolves it internally, so npm consumers see ERR_PNPM_NO_MATCHING_VERSION.
+# Upstream publishing bug: some DSH packages convert their `workspace:^`
+# dependency into a FINAL-only npm range that cannot match published prereleases.
 # Pinning the same rc line is semantically exact and unblocks installation.
 overrides:
-  "@deepseek-ai/dsh-session-projection": "0.1.2-rc.1"
-  "@deepseek-ai/dsh-session-projection-cache": "0.1.2-rc.1"
-  "@deepseek-ai/dsh-storage-domain": "0.1.2-rc.1"
-  "@deepseek-ai/dsh-storage": "0.1.2-rc.1"
+  "@deepseek-ai/dsh-session-projection": "0.1.5-rc.1"
+  "@deepseek-ai/dsh-session-projection-cache": "0.1.5-rc.1"
+  "@deepseek-ai/dsh-storage-domain": "0.1.5-rc.1"
+  "@deepseek-ai/dsh-storage": "0.1.5-rc.1"
   # Deduplicate dsh-llm: the stale @deepseek-ai/dsh-host-apiproxy dev dependency
-  # (not republished in the 0.1.2 line) pulls dsh-llm@0.1.1-rc.2, whose branded
-  # types (e.g. ReasoningEffortId) then conflict with the rc.1 instance.
-  "@deepseek-ai/dsh-llm": "0.1.2-rc.1"
+  # pulls an old dsh-llm whose branded types conflict with the current instance.
+  "@deepseek-ai/dsh-llm": "0.1.5-rc.1"
 

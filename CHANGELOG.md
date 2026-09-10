@@ -3,6 +3,21 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.1.5-rc.1] — 2026-09-10
+
+Version aligned with the DeepSeek Harness `0.1.5-rc.1` release. API-compatible upgrade from 0.1.2-rc.1 — no plugin code changes required; all upstream APIs used by the plugin (`SettingsProvider.installSection`, `llm/stream` waterfall, `attachments.readImage`, `conversation.input.dock` slot, `ctx.slots.inject/register`) are unchanged.
+
+### Changed
+- Dev dependencies aligned to `0.1.5-rc.1` (26 packages updated; 3 stale packages — dsh-client-runtime, dsh-client-web-react, dsh-host-apiproxy — remain at their latest published versions).
+- Peer/dependency ranges extended with `>=0.1.5-alpha.1` to cover the 0.1.5 minor (SemVer prerelease tuple rule).
+- pnpm-workspace.yaml overrides updated to `0.1.5-rc.1`.
+- Plugin benefits from upstream improvements without code changes: HTTP_PROXY support for vision API calls, `read_image` results rendered directly in Web tool cards, pi-ai 0.85.1 upgrade (catalog-changed validator fix).
+
+### Known limitations
+- Session format V3 migration is irreversible — users who upgrade cannot downgrade to 0.1.2-rc.1 session logs.
+- `@deepseek-ai/dsh-client-runtime`, `@deepseek-ai/dsh-client-web-react` and `@deepseek-ai/dsh-host-apiproxy` were not republished in the 0.1.5 line; dev-installed copies stay at their latest versions. They resolve only at build time — at runtime the host frontend still serves these module ids.
+- The image bridge requires per-deployment setup (`bridgeModels` plus an `image` declaration in the model's `inputModalities`) and is not zero-config. The modalities auto-sync removes the manual settings.yaml step; a restart is still needed for the running harness to reload the model registry.
+
 ## [0.1.2-rc.1] — 2026-09-03
 
 Version aligned with the DeepSeek Harness `0.1.2-rc.1` release (installed via the npm `alpha` → `0.1.2-rc.1` dist-tag).
