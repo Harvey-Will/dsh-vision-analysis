@@ -32,7 +32,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { ContentBlock, GenerateOptions, ImageBlock, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, ImageBlock, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { Config } from './config.js'
@@ -55,25 +55,31 @@ export function bridgeImagePlaceholder(ref: ImageAttachmentRef): string {
 
 /**
  * Project every image block (nested tool results included) to placeholder
- * text, mirroring DSH's own text-only projection. The placeholder is
- * deterministic in the attachment id, so it is reconstructable from the
- * session log — the model-visible ⟺ logged invariant holds.
+ * text, mirroring DSH's own text-only projection.  Uses the bridge-specific
+ * placeholder format (attachment-ID-carrying) rather than the upstream
+ * `projectImagesForTextModel` default, preserving the model-visible ⟺ logged
+ * invariant.  Handles both old (`tool-result`) and new (`tool-call`) block
+ * types for cross-version compatibility.
  */
-export function projectImagesInMessages(messages: readonly Message[]): Message[] {
+export function projectImagesInMessages(messages: readonly RequestMessage[]): readonly RequestMessage[] {
   const projectContent = (blocks: readonly ContentBlock[]): ContentBlock[] => {
     const next: ContentBlock[] = []
     for (const block of blocks) {
       if (block.type === 'image') {
         next.push({ type: 'text', text: bridgeImagePlaceholder(block.attachment) })
-      } else if (block.type === 'tool-result') {
-        next.push({ ...block, content: projectContent(block.content) })
+      } else if ((block as { type: string }).type === 'tool-result') {
+        const toolResult = block as unknown as { type: string; content: ContentBlock[] }
+        next.push({ ...toolResult, content: projectContent(toolResult.content) } as unknown as ContentBlock)
+      } else if ((block as { type: string }).type === 'tool-call') {
+        const toolCall = block as unknown as { type: string; content: ContentBlock[] }
+        next.push({ ...toolCall, content: projectContent(toolCall.content) } as unknown as ContentBlock)
       } else {
         next.push(block)
       }
     }
     return next
   }
-  return messages.map((message) => ({ ...message, content: projectContent(message.content) }))
+  return messages.map((message) => ({ ...message, content: projectContent(message.content) })) as RequestMessage[]
 }
 
 /** The slice of the runtime services the bridge needs, for testability. */
@@ -94,12 +100,12 @@ export interface BridgePlan {
 }
 
 /** Whether any message in the list carries an image block, nested included. */
-export function messagesContainImage(messages: readonly Message[]): boolean {
+export function messagesContainImage(messages: readonly RequestMessage[]): boolean {
   return messages.some((message) => contentHasImage(message.content))
 }
 
 /** Index of the last user-role message in the list, or -1. */
-export function lastUserMessageIndex(messages: readonly Message[]): number {
+export function lastUserMessageIndex(messages: readonly RequestMessage[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]!.role === 'user') return i
   }
@@ -107,15 +113,15 @@ export function lastUserMessageIndex(messages: readonly Message[]): number {
 }
 
 /** Collect every image block from one message's content, in order. */
-export function imageBlocksOf(message: Message): ImageBlock[] {
+export function imageBlocksOf(message: RequestMessage): ImageBlock[] {
   return message.content.filter((block): block is ImageBlock => block.type === 'image')
 }
 
 /** Collect the plain-text blocks of one message, joined with newlines. */
-export function textOf(message: Message): string {
+export function textOf(message: RequestMessage): string {
   return message.content
-    .filter((block) => block.type === 'text' && typeof (block as { text?: unknown }).text === 'string')
-    .map((block) => (block as { text: string }).text)
+    .filter((block: ContentBlock) => block.type === 'text' && typeof (block as { text?: unknown }).text === 'string')
+    .map((block: ContentBlock) => (block as { text: string }).text)
     .join('\n')
 }
 
@@ -137,7 +143,7 @@ export async function planBridge(
   const index = lastUserMessageIndex(options.messages)
   if (index === -1) return null
   const target = options.messages[index]!
-  const blocks = imageBlocksOf(target)
+  const blocks = imageBlocksOf(target as RequestMessage)
   if (blocks.length === 0) return null
 
   const images: LoadedImage[] = []
@@ -222,8 +228,8 @@ async function* projectAndRedispatch(
   services: BridgeServices,
   options: GenerateOptions,
 ): AsyncGenerator<StreamChunk> {
-  const projected = projectImagesInMessages(options.messages)
-  yield* services.llm.stream({ ...options, messages: projected })
+  const projected = projectImagesInMessages(options.messages as readonly RequestMessage[])
+  yield* services.llm.stream({ ...options, messages: projected as RequestMessage[] })
 }
 
 /**
@@ -258,7 +264,7 @@ export function installImageBridge(
     if (
       config.imageBridge !== true
       || !isBridged(config.bridgeModels ?? [], options.model)
-      || !messagesContainImage(options.messages)
+      || !messagesContainImage(options.messages as RequestMessage[])
     ) {
       return next()
     }

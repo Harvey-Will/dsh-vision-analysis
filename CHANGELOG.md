@@ -3,6 +3,36 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.1.7-alpha.1] — 2026-09-22
+
+Version aligned with the DeepSeek Harness `0.1.7-alpha.1` release. Three upstream
+breaking changes handled; all plugin features remain functional.
+
+### Changed
+- **Settings API third generation** (`SettingsProvider.installSection` removed
+  upstream): the compatibility shim now detects `SettingsForms` (0.1.7+) and
+  wires lazy config reading through `describe()` plus a best-effort
+  `settings/updated` change listener. Schema registration is automatic (derived
+  from the plugin's `Config` export).
+- **Message types** (`Message` → `RequestMessage = Message | RequestUserInput`):
+  bridge helpers now use `RequestMessage` throughout.
+- **ContentBlock vocabulary** (`tool-result` removed → `tool-call` /
+  `tool-addition` / `tool-removal`): image projection recurses into both legacy
+  `tool-result` and new `tool-call` nested content, keeping the bridge-specific
+  placeholder format (not the upstream `projectImagesForTextModel` default).
+- Bridge modalities sync degrades gracefully when `settings.yaml` is absent
+  (0.1.7 migrates it into the profile) instead of failing plugin boot.
+- Dev dependencies aligned to `0.1.7-alpha.1`; `dsh-code-runtime` pinned to
+  `0.1.5-rc.3` (not republished in the 0.1.7 line). Peer/dependency ranges
+  extended with `>=0.1.7-alpha.1`.
+
+### Known limitations
+- Modalities auto-sync is a no-op on 0.1.7+ (model config storage moved from
+  settings.yaml into the profile patch). Existing `_visionBridge` declarations
+  survive the upstream migration; new bridge models need their `image`
+  inputModalities configured via the profile until sync is ported.
+- Session format V4 in 0.1.7 is read-only for this plugin (no session I/O).
+
 ## [0.1.5-rc.1] — 2026-09-10
 
 Version aligned with the DeepSeek Harness `0.1.5-rc.1` release. API-compatible upgrade from 0.1.2-rc.1 — no plugin code changes required; all upstream APIs used by the plugin (`SettingsProvider.installSection`, `llm/stream` waterfall, `attachments.readImage`, `conversation.input.dock` slot, `ctx.slots.inject/register`) are unchanged.

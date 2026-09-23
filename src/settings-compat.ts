@@ -1,22 +1,25 @@
 /**
  * Harness-version compatibility shim for settings section registration.
  *
- * The DSH 0.1.2 prerelease line split here: the npm-published
- * `@deepseek-ai/dsh-settings@0.1.2-alpha.5` still exposes the standalone
- * `installSettingsSection(ctx, ns, schema, entry, hooks)`, while the GitHub
- * tag of the same version replaced it with a `SettingsProvider.installSection`
- * method. Node ESM named imports of a missing export throw at link time, so
- * this shim resolves the API at runtime instead of importing either name.
+ * Three API generations, detected at runtime:
+ *  1. `SettingsProvider.installSection(owner, ns, schema, entry, hooks)`
+ *     (0.1.2–0.1.5): method on the settings service.
+ *  2. Standalone `installSettingsSection(ctx, ns, schema, entry, hooks)`
+ *     (≤0.1.2-alpha.5): module-level function.
+ *  3. `SettingsForms` (0.1.7+): schema is auto-discovered from the plugin's
+ *     `Config` export — no explicit registration needed. Config lives in the
+ *     profile patch (cordis.patch.yml). The shim wires a lazy config reader
+ *     via `describe()` and attempts best-effort change notification.
  *
- * Both call shapes are behaviorally identical (same hooks, same semantics);
- * only the carrier differs.
+ * Node ESM named imports of a missing export throw at link time, so this
+ * shim resolves the API at runtime instead of importing either name.
  * @module dsh-vision-analysis/settings-compat
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import * as dshSettings from '@deepseek-ai/dsh-settings'
 
-/** Hooks accepted by both API generations. */
+/** Hooks accepted by all API generations. */
 export interface SectionHooks<T> {
   setSource(current: () => T): void
   onChange(): void
@@ -26,11 +29,11 @@ export interface SectionHooks<T> {
 /**
  * Register a settings section on whichever API this Harness version exposes.
  * @param ctx - the consumer context (our plugin context).
- * @param ns - lowercase-hyphenated settings namespace.
+ * @param ns - lowercase-hyphenated settings namespace (profile entry id).
  * @param schema - schemastery schema describing the section.
  * @param entry - the composition entry value.
  * @param hooks - setSource / onChange / optional validate.
- * @throws when neither API generation is available (unsupported Harness).
+ * @throws when no API generation is available (unsupported Harness).
  */
 export function installSettingsSectionCompat<T>(
   ctx: Context,
@@ -39,7 +42,7 @@ export function installSettingsSectionCompat<T>(
   entry: T,
   hooks: SectionHooks<T>,
 ): void {
-  // Modern (GitHub tag 0.1.2+): a method on the SettingsProvider service.
+  // ── Generation 1 (0.1.2–0.1.5): SettingsProvider.installSection ──────────
   const provider = ctx.settings as unknown as {
     installSection?: (owner: Context, ns: string, schema: unknown, entry: T, hooks: SectionHooks<T>) => void
   }
@@ -47,7 +50,8 @@ export function installSettingsSectionCompat<T>(
     provider.installSection(ctx, ns, schema, entry, hooks)
     return
   }
-  // Legacy (npm 0.1.2-alpha.5 and older): a standalone module function.
+
+  // ── Generation 2 (≤0.1.2-alpha.5): standalone module function ────────────
   const legacy = (dshSettings as unknown as {
     installSettingsSection?: (ctx: Context, ns: string, schema: unknown, entry: T, hooks: SectionHooks<T>) => void
   }).installSettingsSection
@@ -55,5 +59,32 @@ export function installSettingsSectionCompat<T>(
     legacy(ctx, ns, schema, entry, hooks)
     return
   }
-  throw new Error('no settings section API on this Harness version (installSection/installSettingsSection both missing)')
+
+  // ── Generation 3 (0.1.7+): SettingsForms — schema auto-discovered ────────
+  // The forms system reads the plugin's Config export from the profile; no
+  // explicit registration is needed.  We only wire a lazy config reader and
+  // best-effort change notification so `current()` always returns the live
+  // value from the profile patch.
+  const forms = ctx.settings as unknown as {
+    describe?: (options?: { redactSecrets?: boolean }) => Array<{ ns: string; value?: unknown }>
+  }
+  if (typeof forms?.describe === 'function') {
+    hooks.setSource(() => {
+      const descriptors = forms.describe!({ redactSecrets: true })
+      const desc = descriptors.find((d) => d.ns === ns)
+      return (desc?.value ?? entry) as T
+    })
+    // Best-effort change notification: `settings/updated` may not exist in
+    // every 0.1.x build; if it does, trigger onChange on updates.  Wrapped
+    // so a missing event never breaks plugin boot.
+    try {
+      ctx.effect(
+        () => (ctx.on as (ev: string, cb: () => void) => () => void)('settings/updated', () => hooks.onChange()),
+        'uva: settings change listener',
+      )
+    } catch { /* event unavailable — config changes take effect on next call */ }
+    return
+  }
+
+  throw new Error('no settings section API on this Harness version (installSection / installSettingsSection / SettingsForms all missing)')
 }

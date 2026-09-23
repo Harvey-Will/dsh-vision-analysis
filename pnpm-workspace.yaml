@@ -9,11 +9,11 @@ minimumReleaseAge: 0
 # dependency into a FINAL-only npm range that cannot match published prereleases.
 # Pinning the same rc line is semantically exact and unblocks installation.
 overrides:
-  "@deepseek-ai/dsh-session-projection": "0.1.5-rc.1"
-  "@deepseek-ai/dsh-session-projection-cache": "0.1.5-rc.1"
-  "@deepseek-ai/dsh-storage-domain": "0.1.5-rc.1"
-  "@deepseek-ai/dsh-storage": "0.1.5-rc.1"
+  "@deepseek-ai/dsh-session-projection": "0.1.7-alpha.1"
+  "@deepseek-ai/dsh-session-projection-cache": "0.1.7-alpha.1"
+  "@deepseek-ai/dsh-storage-domain": "0.1.7-alpha.1"
+  "@deepseek-ai/dsh-storage": "0.1.7-alpha.1"
   # Deduplicate dsh-llm: the stale @deepseek-ai/dsh-host-apiproxy dev dependency
   # pulls an old dsh-llm whose branded types conflict with the current instance.
-  "@deepseek-ai/dsh-llm": "0.1.5-rc.1"
+  "@deepseek-ai/dsh-llm": "0.1.7-alpha.1"
 

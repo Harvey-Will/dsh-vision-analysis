@@ -333,7 +333,14 @@ async function patchEntries(
   log: (msg: string) => void,
 ): Promise<string[]> {
   if (modelIds.length === 0) return []
-  const text = await readFile(settingsPath, 'utf-8')
+  let text: string
+  try {
+    text = await readFile(settingsPath, 'utf-8')
+  } catch {
+    // settings.yaml absent (0.1.7+ profile migration) — skip gracefully.
+    log('settings.yaml not found (profile-migrated build?) — skipping modalities sync')
+    return []
+  }
   const lines = text.split('\n')
   const touched: string[] = []
 
@@ -421,7 +428,13 @@ export async function revertAllBridgeModalities(
   settingsPath: string,
   log: (msg: string) => void,
 ): Promise<string[]> {
-  const text = await readFile(settingsPath, 'utf-8')
+  let text: string
+  try {
+    text = await readFile(settingsPath, 'utf-8')
+  } catch {
+    log('settings.yaml not found (profile-migrated build?) — skipping revert-all')
+    return []
+  }
   const lines = text.split('\n')
   const touched: string[] = []
   // Collect patches against the ORIGINAL array first, then apply bottom-up —
