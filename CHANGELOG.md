@@ -3,6 +3,36 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.1.7-rc.2] — 2026-09-24
+
+Version aligned with the DeepSeek Harness `0.1.7-rc.2` release. No code changes
+required — every upstream API this plugin uses was verified against the
+installed 0.1.7-rc.2 runtime.
+
+### Changed
+- Dev dependencies aligned to `0.1.7-rc.2`; peer/dependency ranges extended with
+  `>=0.1.7-rc.1` documenting 0.1.7-rc line support. The plugin-version
+  compatibility gate introduced in 0.1.7-rc.1 (which checks `@deepseek-ai/dsh*`
+  peer ranges against the runtime, prereleases participating) accepts this
+  plugin on `0.1.7-rc.2` — verified against the gate's own predicate.
+- Desktop variant (0.1.7-rc.2): the desktop app embeds the same web frontend —
+  the plugin's client face (`platform: "web"`) loads there unchanged. No
+  desktop-specific plugin surface exists in the runtime to adapt to.
+
+### Verified
+- `SettingsForms` third-generation settings path, `llm/stream` waterfall,
+  `attachments.readImage`, and the `conversation.input.dock` slot are unchanged
+  in 0.1.7-rc.2. 130/130 tests green; tsc 0 errors; client build OK.
+- Upstream since 0.1.7-alpha.1 (alpha.2 / rc.1 / rc.2) touches plugin-adjacent
+  surfaces we do not use (`spill-policy` token budgets, `agent/created` events,
+  Session sync-history deprecations, PTC renames, `readBytes` migration) — none
+  affect this plugin.
+
+### Known limitations
+- Unchanged from 0.1.7-alpha.1: modalities auto-sync is a no-op on 0.1.7+
+  profile storage; `_visionBridge` declarations survive the upstream settings
+  migration.
+
 ## [0.1.7-alpha.1] — 2026-09-22
 
 Version aligned with the DeepSeek Harness `0.1.7-alpha.1` release. Three upstream
