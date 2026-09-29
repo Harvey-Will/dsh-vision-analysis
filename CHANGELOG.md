@@ -3,6 +3,55 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.2.0-rc.1] — 2026-09-28
+
+Version aligned with the DeepSeek Harness `0.2.0-rc.1` release (first `0.2.0`
+series candidate; no intermediate versions were published after `0.1.7-rc.2`).
+The API audit against the installed runtime also surfaced two pre-existing
+client-face defects (both present on 0.1.7-rc.2 as well, not 0.2.0
+regressions), fixed here.
+
+### Changed
+- Dev dependencies aligned to `0.2.0-rc.1`; dependency/peer ranges extended
+  with `>=0.2.0-rc.1`. The 0.1.7-rc.1 compatibility gate evaluates
+  `@deepseek-ai/dsh*` peer ranges with `includePrerelease`, so the previous
+  ranges already passed on `0.2.0-rc.1` — verified against the installed gate
+  predicate — but strict resolver semantics (pnpm/npm) need the explicit
+  branch to resolve the aligned `0.2.0-rc.1` packages.
+- pnpm overrides (session-projection, storage, dsh-llm dedupe) pinned to
+  `0.2.0-rc.1`.
+
+### Fixed
+- The `conversation.input.dock` Web UI hint never rendered: it read
+  `input.imageIds`, a field no runtime build publishes (draft attachments live
+  in `InputState.attachmentIds`), and its `sessionId` prop was never injected,
+  silently disabling the model-capability check. The entry now follows the
+  typed `InputZone` owner contract (`{ session, input }`), takes the session id
+  from the slot `inject(sessionId)` argument (falling back to owner props for
+  older builds), and resolves draft attachment kinds (`image`/`file`) through
+  the optional `uiConversation` face — degrading to kind-unknown logic when
+  that service is absent. Visibility rule extracted as the pure, tested
+  `shouldShowInterpretHint()`.
+- The settings change listener subscribed to `settings/updated`, an event name
+  no observed runtime build emits. The Forms service emits
+  `settings/document-updated` (verified in 0.1.7-rc.2 and 0.2.0-rc.1); the shim
+  now subscribes to the real name and keeps the old one as a legacy alias.
+
+### Verified
+- Upstream surfaces this plugin uses are byte-identical between 0.1.7-rc.2 and
+  0.2.0-rc.1: `dsh-settings` (`SettingsForms`), `dsh-llm` (`llm/stream`),
+  `dsh-attachment` (`attachments.readImage`), `dsh-tools`, `dsh-client-ui-slots`
+  / `-renderer` / `-locale` / `-connection`, the api-session/api-settings
+  controllers, `dsh-plugin-manager`, `dsh-app-boot`, `dsh-client-modules`.
+  `dsh-client-ui-conversation` changes are additive (submission-arbitration
+  fields); the `conversation.input.dock` `InputZone` contract is unchanged.
+  `dsh-util-values` changed only an internal realm-intrinsic probe.
+- 139/139 tests green (130 + 9 new); tsc 0 errors; client bundle build OK.
+
+### Known limitations
+- Unchanged: modalities auto-sync is a no-op on 0.1.7+ profile storage;
+  `_visionBridge` declarations survive the upstream settings migration.
+
 ## [0.1.7-rc.2] — 2026-09-24
 
 Version aligned with the DeepSeek Harness `0.1.7-rc.2` release. No code changes

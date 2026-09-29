@@ -184,7 +184,7 @@ analyze_image(image?, images?, mode?, prompt?)
 
 | | 支持情况 |
 |---|---|
-| DeepSeek Harness | `0.1.0-rc.x`（已在 `rc.8` 实测） |
+| DeepSeek Harness | `0.1.0-rc.x` – `0.2.0-rc.x`（已在 `0.2.0-rc.1` 实测） |
 | Node.js | `^22.19 \|\| >=24` |
 | 视觉线协议 | OpenAI `chat/completions`、Anthropic `messages` |
 | 图片格式 | PNG、JPEG、GIF、WebP、BMP（本地 / URL / data URL） |

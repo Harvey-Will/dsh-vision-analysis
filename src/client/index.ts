@@ -98,8 +98,17 @@ function modelSupportsImage(modelId: string): boolean {
 
 /** Minimal structural contracts; the runtime injects the real objects. */
 interface VisionDockProps {
+  /**
+   * Owner props per the `InputZone` contract of `conversation.input.dock`
+   * (`{ session: SessionSnapshot, input: InputState }`; verified against the
+   * typed slot contract in 0.1.7-rc.2 / 0.2.0-rc.1).
+   */
+  session?: { sessionId?: string }
+  /** Composer input state (`InputState`): draft attachments live in `attachmentIds`. */
+  input?: { attachmentIds?: readonly string[]; imageIds?: readonly string[] }
+  /** Legacy owner shape (older Harness builds) passing the session id directly. */
   sessionId?: string
-  /** Composer input state, provided to every session-scope entry. */
+  /** Standard session-scope selector hook; fallback when owner props are absent. */
   useInput?: (selector: (state: unknown) => unknown) => unknown
   /** Injectable: the shared API client (current model + plugin settings). */
   api?: {
@@ -112,16 +121,55 @@ interface VisionDockProps {
       }>
     }
   }
+  /** Injectable: resolves draft attachment ids to typed attachments (`kind: 'image' | 'file'`). */
+  resolveDraftAttachments?: (ids: readonly string[]) => readonly { kind?: string }[]
   /** Injectable: bound translator for this namespace. */
   t?: (key: string, params?: Record<string, string>) => string
 }
 
+/**
+ * Whether the save-locally hint should render.  Pure decision logic, exported
+ * for tests.  `hasImage` is `null` when the attachment kinds could not be
+ * resolved (no uiConversation service): a generic attachment is then treated
+ * as a possible image so the guidance still reaches the user.
+ */
+export function shouldShowInterpretHint(args: {
+  attachmentCount: number
+  hasImage: boolean | null
+  modelImageCapable: boolean | null
+  bridgeOn: boolean
+}): boolean {
+  if (args.attachmentCount === 0) return false
+  if (args.hasImage === false) return false
+  if (args.modelImageCapable === true) return false
+  return args.bridgeOn === false
+}
+
 /** The composer dock entry that guides image-capability fallback. */
 function VisionInterpretDock({
-  sessionId, useInput, api, t,
+  session, input, sessionId: legacySessionId, useInput, api, resolveDraftAttachments, t,
 }: VisionDockProps): React.ReactElement | null {
-  const inputState = useInput === undefined ? undefined : useInput((state) => state)
-  const imageIds: string[] = (inputState as { imageIds?: string[] } | undefined)?.imageIds ?? []
+  // Owner props (`InputZone`) carry the live `InputState`; the `useInput`
+  // selector hook is the fallback for Harness builds that only publish the
+  // standard hooks.  Draft attachments live in `attachmentIds`; older builds
+  // kept image drafts in `imageIds`.
+  const inputState = (input ?? (useInput === undefined ? undefined : useInput((state) => state))) as
+    | { attachmentIds?: readonly string[]; imageIds?: readonly string[] }
+    | undefined
+  const attachmentIds: readonly string[] = inputState?.attachmentIds ?? []
+  const legacyImageIds: readonly string[] = inputState?.imageIds ?? []
+  const attachmentCount = attachmentIds.length + legacyImageIds.length
+  // Resolve attachment kinds (image vs file) through the browser-owned draft
+  // store when the uiConversation face is reachable; otherwise the kinds stay
+  // unknown and the hint logic treats a generic attachment as a possible image.
+  const resolvedKinds = resolveDraftAttachments !== undefined && attachmentIds.length > 0
+    ? resolveDraftAttachments(attachmentIds)
+    : undefined
+  const legacyHasImage: boolean | null = legacyImageIds.length > 0 ? true : null
+  const hasImage: boolean | null = resolvedKinds === undefined
+    ? legacyHasImage
+    : resolvedKinds.some((a) => a.kind === 'image') || legacyHasImage === true
+  const sessionId = session?.sessionId ?? legacySessionId
   const [modelImageCapable, setModelImageCapable] = useState<boolean | null>(null)
   const [bridgeOn, setBridgeOn] = useState<boolean>(true)
 
@@ -165,7 +213,12 @@ function VisionInterpretDock({
   // (query failed, model not resolved) must still show it when the bridge is
   // off — otherwise the user only has the native send, which the host rejects
   // for a text-only model.
-  const showHint = imageIds.length > 0 && modelImageCapable !== true && bridgeOn === false
+  const showHint = shouldShowInterpretHint({
+    attachmentCount,
+    hasImage,
+    modelImageCapable,
+    bridgeOn,
+  })
 
   if (!showHint) return null
 
@@ -228,10 +281,25 @@ export function apply(ctx: Context): void {
     id: 'uva-vision-interpret',
     order: 500,
     locale: NS,
-    inject: () => ({
-      api: (ctx.get('connection') as { api?: unknown } | undefined)?.api,
-      t,
-    }),
+    // The slot runtime calls inject(sessionId, actions) with the session scope
+    // key as the first argument (verified 0.1.7-rc.2 / 0.2.0-rc.1); older
+    // builds pass nothing, so the session id stays optional.  Draft attachment
+    // kinds resolve through the browser-owned uiConversation face when that
+    // service is present — accessed optionally so its absence (older builds)
+    // degrades to kind-unknown hint logic instead of blocking the entry.
+    inject: (...args: unknown[]) => {
+      const conversation = ctx.get('uiConversation') as
+        | { resolveDraftAttachments?: (ids: readonly string[]) => readonly { kind?: string }[] }
+        | undefined
+      return {
+        sessionId: typeof args[0] === 'string' ? args[0] : undefined,
+        api: (ctx.get('connection') as { api?: unknown } | undefined)?.api,
+        resolveDraftAttachments: typeof conversation?.resolveDraftAttachments === 'function'
+          ? (ids: readonly string[]) => conversation.resolveDraftAttachments!(ids)
+          : undefined,
+        t,
+      }
+    },
   }, VisionInterpretDock))
 }
 

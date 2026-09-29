@@ -33,14 +33,19 @@
 
 ## DSH 版本对齐
 
-- 当前插件版本：`0.1.2-rc.1`
-- DSH 主环境版本：`0.1.2-rc.1`（npm dist-tag `alpha`）
+- 当前插件版本：`0.2.0-rc.1`
+- DSH 主环境版本：`0.2.0-rc.1`（npm dist-tag `next`；`latest` 仍是 `0.1.7-rc.2`）
 - 关注 DSH 版本更新时的 API 变更：settings 服务、client UI 模块、类型增强可能在版本间搬家
-- semver prerelease 范围陷阱：`^0.1.1-rc.2` 匹配不到 `0.1.2-rc.1`——需加 `>=0.1.2-alpha.1` 分支
+- semver prerelease 范围陷阱：`^0.1.1-rc.2` 匹配不到 `0.1.2-rc.1`；`>=0.1.7-rc.1`（严格模式）也匹配不到 `0.2.0-rc.1`——每个 prerelease 线需加显式分支（`|| >=0.2.0-rc.1`）
+- 插件兼容门禁（0.1.7-rc.1+）用 `semver.satisfies(..., { includePrerelease: true })` 查 **peerDependencies** 中 `@deepseek-ai/dsh*` 的范围，宽松；但 pnpm/npm 解析依赖走严格模式——两套语义都要满足
+- 0.2.0-rc.1 API 审计结论：插件所用全部上游面（SettingsForms / llm/stream / attachments.readImage / dsh-tools / slots / renderer / locale / connection / api 控制器 / 插件装载链）与 0.1.7-rc.2 **逐字节相同**；dsh-client-ui-conversation 仅增量（提交仲裁字段）
+- 设置变更事件名是 `settings/document-updated`（0.1.7-rc.2 与 0.2.0-rc.1 一致）；`settings/updated` 是不存在的历史误写
+- `conversation.input.dock` 契约：owner props = `InputZone { session: SessionSnapshot, input: InputState }`；草稿附件在 `input.attachmentIds`（`imageIds` 字段不存在）；`inject(sessionId, actions)` 的第一个参数是会话 id；附件 kind（image/file）经可选的 `uiConversation.resolveDraftAttachments` 解析
 
 ## 已知限制
 
-- 桥接修改 settings.yaml 后需要重启 DSH（运行时内存态不自动更新）
+- 桥接修改 settings.yaml 后需要重启 DSH（运行时内存态不自动更新）；0.1.7+ 配置已迁移到 profile，modalities 自动同步为空操作（新增桥接模型需手动配 `inputModalities`）
 - 桥接在流层面工作，UI 里没有显式的工具调用块（这是设计行为，不是 bug）
 - 桥接非限流失败时仍会静默降级（M1，部分修复）
 - settings service API（mutate）理论上可解决双重启问题，但标记字段会被 schema 剥离——记录为后续方向
+- `dsh.client.inject` 里保留了停更包 `@deepseek-ai/dsh-client-runtime`（0.1.1-rc.2）——历史遗留、两版行为相同，清理候选

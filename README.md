@@ -186,7 +186,7 @@ All fields are editable live from `Settings → 插件配置` (API key field is 
 
 | | Supported |
 |---|---|
-| DeepSeek Harness | `0.1.0-rc.x` (verified on `rc.8`) |
+| DeepSeek Harness | `0.1.0-rc.x` – `0.2.0-rc.x` (verified on `0.2.0-rc.1`) |
 | Node.js | `^22.19 \|\| >=24` |
 | Vision wire formats | OpenAI `chat/completions`, Anthropic `messages` |
 | Image formats | PNG, JPEG, GIF, WebP, BMP (local / URL / data URL) |

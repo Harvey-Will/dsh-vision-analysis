@@ -166,6 +166,26 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 ---
 
+## 13. pnpm 沿用 lockfile 旧解析，devDeps 静默停在旧版
+
+**症状**：package.json 的 devDeps 已升到新版（如 `^0.2.0-rc.1`），`pnpm install` 成功，但 `pnpm ls` 显示解析结果还是旧版（如 0.1.7-rc.2）。
+
+**根因**：两个叠加因素——(1) pnpm 倾向保留 lockfile 中仍满足范围的既有解析（prefer-frozen），即使新版也在范围内；(2) 同名包同时出现在 `dependencies` 和 `devDependencies` 时，pnpm 合并解析，宽的那条（dependencies 的 OR 范围）可能赢。0.2.0-rc.1 升级时 `@deepseek-ai/dsh-settings` 就这样停在了 0.1.7-rc.2。
+
+**解决方案**：`CI=true pnpm update <pkg>` 强制重解析该包；升级后必查 `pnpm ls <pkg>` 确认每个 edge 都落在目标版本。别依赖 install 的默认解析。
+
+---
+
+## 14. 客户端槽位「幽灵 prop / 幽灵字段」静默失效
+
+**症状**：client 面槽位组件注册成功但从不渲染（或从不执行某些逻辑），无报错、无日志。
+
+**根因**：槽位组件解构的 props / 读取的 state 字段名来自旧版契约，运行时根本不注入/不存在。实例：dock 读 `input.imageIds`（实际是 `InputState.attachmentIds`）、解构 `sessionId` prop（实际 owner props 是 `InputZone { session, input }`，会话 id 在 `session.sessionId` 或 `inject(sessionId)` 第一个参数里）。类型是结构性宽松断言（`as { imageIds?: ... }`），编译期发现不了。
+
+**解决方案**：写 client 面之前先到运行时的 `dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts` 查目标槽位的**正式契约类型**（owner props、inject 签名），并 grep 运行时源码确认字段真实存在（`grep -rn "imageIds" <runtime>/` 零命中就是红旗）。把可见性/决策逻辑抽成纯函数写单测。每次 DSH 升级做「契约漂移检查」：对我们读的每个字段名在新运行时 grep 一遍。
+
+---
+
 ## 快速检查清单
 
 遇到异常时按此顺序排查：
@@ -177,3 +197,4 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 5. [ ] 测试 fixtures 是否用了合成数据？（不从真实配置复制）
 6. [ ] 提交前是否 `git grep` 扫描了隐私信息？
 7. [ ] bridge 不工作时：模型 inputModalities 有没有 `image`？视觉端点是否存活？
+8. [ ] DSH 升级后：client 面读取的字段名/props 在新运行时 grep 还存在吗？`pnpm ls` 的解析版本和目标版本一致吗？

@@ -74,14 +74,20 @@ export function installSettingsSectionCompat<T>(
       const desc = descriptors.find((d) => d.ns === ns)
       return (desc?.value ?? entry) as T
     })
-    // Best-effort change notification: `settings/updated` may not exist in
-    // every 0.1.x build; if it does, trigger onChange on updates.  Wrapped
-    // so a missing event never breaks plugin boot.
+    // Best-effort change notification.  The Forms service emits
+    // `settings/document-updated` (verified in 0.1.7-rc.2 and 0.2.0-rc.1);
+    // `settings/updated` is kept as a legacy alias for any build that may
+    // still use the older name.  Both are wrapped so a missing event surface
+    // never breaks plugin boot.
     try {
-      ctx.effect(
-        () => (ctx.on as (ev: string, cb: () => void) => () => void)('settings/updated', () => hooks.onChange()),
-        'uva: settings change listener',
-      )
+      const on = ctx.on as (ev: string, cb: () => void) => () => void
+      ctx.effect(() => {
+        const offs = [
+          on('settings/document-updated', () => hooks.onChange()),
+          on('settings/updated', () => hooks.onChange()),
+        ]
+        return () => { for (const off of offs) off() }
+      }, 'uva: settings change listener')
     } catch { /* event unavailable — config changes take effect on next call */ }
     return
   }
