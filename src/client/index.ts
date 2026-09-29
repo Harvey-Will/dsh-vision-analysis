@@ -146,7 +146,7 @@ export function shouldShowInterpretHint(args: {
 }
 
 /** The composer dock entry that guides image-capability fallback. */
-function VisionInterpretDock({
+export function VisionInterpretDock({
   session, input, sessionId: legacySessionId, useInput, api, resolveDraftAttachments, t,
 }: VisionDockProps): React.ReactElement | null {
   // Owner props (`InputZone`) carry the live `InputState`; the `useInput`

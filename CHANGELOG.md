@@ -46,7 +46,16 @@ regressions), fixed here.
   `dsh-client-ui-conversation` changes are additive (submission-arbitration
   fields); the `conversation.input.dock` `InputZone` contract is unchanged.
   `dsh-util-values` changed only an internal realm-intrinsic probe.
-- 139/139 tests green (130 + 9 new); tsc 0 errors; client bundle build OK.
+- 155/155 tests green (130 + 25 new: shim event wiring, dock decision logic,
+  real-react render tests for the dock incl. regressions, and real-cordis
+  Context integration — plugin boot, fiber disposal, settings events and
+  `llm/stream` image projection through the real event bus); tsc 0 errors;
+  client bundle build OK.  Live verification on 0.2.0-rc.1: real profile
+  composition loads the plugin (`dsh --dump-config`), the installed
+  compatibility gate accepts the plugin across 0.1.0-rc.8 → 0.2.1-alpha.1,
+  Config schema auto-discovery emits the `vision-analysis` form, and the
+  deployed artifact answered a real vision request (3.6 s) with the full
+  within-group 429 fallback chain exercised live.
 
 ### Known limitations
 - Unchanged: modalities auto-sync is a no-op on 0.1.7+ profile storage;
