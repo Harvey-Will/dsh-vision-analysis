@@ -174,6 +174,8 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 **解决方案**：`CI=true pnpm update <pkg>` 强制重解析该包；升级后必查 `pnpm ls <pkg>` 确认每个 edge 都落在目标版本。别依赖 install 的默认解析。
 
+**⚠️ 陷阱续集（两次实锤）**：`pnpm update <pkg>` 会顺手把该包在 package.json 里的**范围改写成解析出的精确版本**（`^0.1.0-rc.6 || ... || >=0.2.0-rc.2` 被压平成 `"0.2.0-rc.2"`），把我们为跨版本兼容设计的 OR 范围毁掉。所以 update 之后必须 `git diff package.json` 检查并恢复范围——先 update 解析，再手工恢复范围（范围恢复不影响已解析的 node_modules）。
+
 ---
 
 ## 14. 客户端槽位「幽灵 prop / 幽灵字段」静默失效

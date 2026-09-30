@@ -3,6 +3,38 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.2.0-rc.2] — 2026-09-30
+
+Version aligned with the DeepSeek Harness `0.2.0-rc.2` release. No code
+changes — every upstream API this plugin uses was verified against the
+installed 0.2.0-rc.2 runtime.
+
+### Changed
+- Dev dependencies aligned to `0.2.0-rc.2`; dependency/peer ranges extended
+  with `>=0.2.0-rc.2` for strict resolvers. The installed compatibility gate
+  accepts the plugin across `0.1.5-rc.1` → `0.2.1-alpha.1` — verified against
+  the gate predicate in the 0.2.0-rc.2 runtime.
+- pnpm overrides (session-projection, storage, dsh-llm dedupe) pinned to
+  `0.2.0-rc.2`.
+
+### Verified
+- Upstream surfaces byte-identical to 0.2.0-rc.1: `dsh-settings`,
+  `dsh-attachment`, `dsh-tools`, `dsh-client-ui-slots` / `-locale` /
+  `-connection`, the api-session/api-settings controllers, and the plugin
+  loading chain. The 0.2.0-rc.2 deltas are confined to a typert declaration
+  string in `dsh-llm` (new `user-question-reply` message source for the
+  experimental async Q&A mode), a `useMemo` refactor in the slot renderer, and
+  additive conversation client/locale changes — none touch the `llm/stream`
+  waterfall, the `InputZone` dock contract, or the settings surface.
+- The pi-ai 0.87.1 model-catalog refresh ("some older model IDs removed")
+  affects DSH model selection only: the plugin has zero pi-ai coupling and
+  `IMAGE_CAPABLE_MODEL_HINTS` stays a deliberately conservative allowlist.
+- 155/155 tests green; tsc 0 errors; client build OK; real profile
+  composition loads the plugin on 0.2.0-rc.2 (`dsh --dump-config`).
+
+### Known limitations
+- Unchanged from 0.2.0-rc.1.
+
 ## [0.2.0-rc.1] — 2026-09-28
 
 Version aligned with the DeepSeek Harness `0.2.0-rc.1` release (first `0.2.0`
