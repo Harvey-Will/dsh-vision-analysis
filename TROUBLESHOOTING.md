@@ -64,6 +64,8 @@ overrides:
 ```
 按出现的坏包逐个添加。注释说明这是上游发布 bug 的临时绕过。
 
+**变体（0.2.1-rc.1 实锤）**：上游删除某包后（如 `dsh-invariants` 于 0.2.1-alpha.1 移除），陈旧传递树（host-apiproxy 0.1.1-rc.2 一族）仍经 peer 的 final-only 范围索要它——`No matching version found for @deepseek-ai/dsh-invariants@>=0.1.1 <0.2.0-0`。修法相同：override 钉该包**最后发布过的版本**（`0.2.0-rc.2`）。
+
 ---
 
 ## 5. semver prerelease 范围不匹配

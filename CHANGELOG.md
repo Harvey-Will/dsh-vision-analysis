@@ -3,6 +3,64 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.2.1-rc.1] — 2026-10-17
+
+Version aligned with the DeepSeek Harness `0.2.1-rc.1` release, covering the
+seven upstream releases since `0.2.0-rc.2` (`0.2.1-alpha.1` … `alpha.5`,
+`rc.1`, `rc.2`). One real adaptation: the compatibility gate now prioritizes
+`engines.dsh`; everything else was verified unchanged.
+
+### Added
+- Declare `engines.dsh: ">=0.1.0-rc.6"` in `engines`. Since `0.2.1-alpha.4`
+  the plugin compatibility gate judges `engines.dsh` alone when declared
+  (falling back to `@deepseek-ai/dsh*` peer ranges otherwise), and the
+  release notes ask plugin authors to declare it. The range expresses the
+  same supported span as the peer OR-ranges and was verified against the
+  installed gate predicate: ACCEPT across `0.1.0-rc.8` → `0.3.0`, the
+  no-`engines.dsh` peer fallback still ACCEPTs, and a deliberately wrong
+  `engines.dsh` is correctly REJECTed. Peer ranges are kept unchanged for
+  older gates that only read peers.
+
+### Changed
+- Dev dependencies aligned to `0.2.1-rc.1` (pinned exact — the audited
+  runtime); dependency/peer ranges extended with `|| >=0.2.1-rc.1`.
+- Removed the `@deepseek-ai/dsh-invariants` dev dependency: upstream deleted
+  the package and every `./invariant` export in `0.2.1-alpha.1` (breaking
+  change), and this plugin never imported it. The stale host-apiproxy
+  transitive tree still peer-requires it through a final-only range (the
+  known `workspace:^` conversion bug), so an override pins its last published
+  version (`0.2.0-rc.2`) to keep resolution working.
+- pnpm overrides (session-projection, storage, dsh-llm dedupe) pinned to
+  `0.2.1-rc.1`.
+
+### Verified
+- API audit across `0.2.0-rc.2` → `0.2.1-rc.1` (against the installed
+  runtime): zero breaking changes on every surface this plugin uses.
+  `dsh-settings`/`dsh-attachment`/`dsh-client-ui-slots`/`-locale`/manifest/
+  plugin-manager/app-boot/api controllers are byte-identical; `dsh-llm`
+  adds adapter-only fields (`defaultBaseURL`, `imageRequestTarget`,
+  `ConfigureCall`) with `Message`/`ContentBlock`/`llm/stream` untouched
+  (`message.ts` unchanged); `dsh-tools` adds an optional `meta` field;
+  `dsh-client-ui-conversation` keeps the `InputZone` dock contract,
+  `InputState.attachmentIds` and `resolveDraftAttachments` unchanged
+  (changes are additive: user-text factory, message-image labels);
+  renderer/util-values/connection changes are additive.
+- Upstream breaking notes reviewed and confirmed irrelevant: `./invariant`
+  removal, subpath-plugin metadata moved to subpath exports (this plugin is
+  a main-entry bundle; manifest schema unchanged), composer `stats` split
+  into `activity`/`usage` (unused), tool-presentation `both` removal
+  (unused).
+- 155/155 tests green; tsc 0 errors; client bundle build OK; real profile
+  composition loads the plugin on 0.2.1-rc.1 with zero warnings; gate
+  matrix verified against the installed predicate (engines.dsh path, peers
+  fallback, and negative case).
+- `0.2.1-rc.2` (published after the audited runtime) changed only DeepSeek
+  model/search surfaces per its release notes; `dsh-settings` is
+  byte-identical across rc.1/rc.2 and the ranges accept rc.2.
+
+### Known limitations
+- Unchanged from 0.2.0-rc.1.
+
 ## [0.2.0-rc.2] — 2026-09-30
 
 Version aligned with the DeepSeek Harness `0.2.0-rc.2` release. No code
