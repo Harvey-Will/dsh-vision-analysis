@@ -3,6 +3,35 @@
 All notable changes to `dsh-vision-analysis` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.2.1-rc.2] — 2026-10-17
+
+Version aligned with the DeepSeek Harness `0.2.1-rc.2` release. No code
+changes — every upstream API this plugin uses was verified byte-identical
+against the installed 0.2.1-rc.2 runtime.
+
+### Changed
+- Dev dependencies aligned to `0.2.1-rc.2`; dependency/peer ranges extended
+  with `|| >=0.2.1-rc.2`. The `engines.dsh: ">=0.1.0-rc.6"` declaration from
+  0.2.1-rc.1 already covers this runtime; the installed gate accepts the
+  plugin across `0.1.7-rc.2` → `0.2.2-alpha.1` (verified against the gate
+  predicate in the 0.2.1-rc.2 runtime).
+- pnpm overrides (session-projection, storage, dsh-llm dedupe) pinned to
+  `0.2.1-rc.2`.
+
+### Verified
+- Upstream release notes contain only DeepSeek-V4.1-Flash-1017 model support
+  and DeepSeek Search/Fetch API integration — no plugin-surface changes. All
+  sixteen plugin-relevant packages (`dsh-settings`, `dsh-llm`,
+  `dsh-attachment`, `dsh-tools`, `dsh-client-ui-slots` / `-renderer` /
+  `-locale` / `-connection` / `-conversation`, `dsh-util-values`, manifest /
+  plugin-manager / app-boot / client-modules, api controllers) are
+  byte-identical to 0.2.1-rc.1.
+- 155/155 tests green; tsc 0 errors; client bundle build OK; real profile
+  composition loads the plugin with zero warnings.
+
+### Known limitations
+- Unchanged from 0.2.0-rc.1.
+
 ## [0.2.1-rc.1] — 2026-10-17
 
 Version aligned with the DeepSeek Harness `0.2.1-rc.1` release, covering the
